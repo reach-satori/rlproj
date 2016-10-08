@@ -18,7 +18,12 @@ FULL_INAMELIST = ['healing salve',
 
 FULL_RACELIST = ['human',
 				'placeholder1',
-				'placeholder2']
+				'placeholder2',
+				'placeholder',
+				'placeholder',
+				'placeholder',
+				'placeholder',
+				'placeholder']
 
 FULL_CLASSLIST = ['warden',
 				'placeholder1',
@@ -31,11 +36,24 @@ FULL_CLASSLIST = ['warden',
 
 
 
-def race_description(race):
-	if race == 'human':
+def ccreation_description(choice):
+	if choice == 'empty':
+		description = ' '
+	elif choice == 'human':
 		description = 'A race that once thrived, now driven to the brink of slow destruction. Mostly content to be farmers and traders, although some rare enterprising souls take the sword and venture out. placeholder placeholder placeholder placeholder'
-		return description
+	elif choice == 'warden':
+		description = 'generic warrior barbarian, at least until i think about the lore a wee bit lads'
+	return description
 
+def ccreation_stats(choice):
+	if choice == 'empty':
+		stats = [' ']
+	elif choice == 'human':
+		stats = ['this is the human statblock', 'it comes as strings in a list','because i dont know how to format it nicely using onlylibtcod','have you seen this console shit', 'seriously, this is bullshit']
+	elif choice == 'warden':
+		stats = ['more to combat','more to strength', 'more to constitution', 'decent starting weapons']
+
+	return stats
 
 
 def get_item_description(itemname):

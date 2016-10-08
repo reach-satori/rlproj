@@ -5,6 +5,8 @@ import shelve
 import catalog
 from random import gauss
 
+
+
 #window size
 SCREEN_WIDTH = 120
 SCREEN_HEIGHT = 60
@@ -315,7 +317,7 @@ def main_menu():
 
 		if choice == 0:  #new game
 			initialize_player()
-			character_creation()
+			ccreation.begin_creation()
 			clear_screen()
 			new_game()
 			play_game()
@@ -984,73 +986,96 @@ def textbox(lines): # takes text as a list of (str)lines and displays it
 	libtcod.console_flush()
 	ignore = libtcod.console_wait_for_keypress(True)
 
+class Ccreation:
+
+	def __init__(self,stage = 'race select',chosenrace = 'empty',chosenclass = 'empty',chosenperk = 'empty'):
+		self.stage = stage
+		self.chosenrace = chosenrace
+		self.chosenclass = chosenclass
+		self.chosenperk = chosenperk
+
+	def begin_creation(self):
+		while self.stage != 'complete':
+			if self.stage == 'race select':
+				self.descriptionbox(self.chosenrace)
+				self.statbox(self.chosenrace)
+				self.chosenrace = self.choicebox()
+			elif self.stage == 'class select':
+				self.descriptionbox(self.chosenclass)
+				self.statbox(self.chosenclass)
+				self.chosenclass = self.choicebox()
 
 
-def character_creation():
-	width = (SCREEN_WIDTH*2)/3+1
-	height = SCREEN_HEIGHT/2
-	menu_selection = libtcod.console_new(width, height)
-	##################RACERACERACERACERACERACERACE##########################
-	letter_index = ord('a')
-	y = 2
-	x = 2
-	for option_text in catalog.FULL_RACELIST:
-		text = ' ' + chr(letter_index) +'  -  ' + option_text
-		libtcod.console_print_ex(menu_selection, x, y, libtcod.BKGND_NONE, libtcod.LEFT, text)
+	def statbox(self,choice):
+		width = SCREEN_WIDTH -6
+		height = SCREEN_HEIGHT/2 -2
 
-		y += 2
-		if y > SCREEN_HEIGHT/2 - 1:
-			x += 8
-			y = 2
-		letter_index += 1
-	libtcod.console_print_frame(menu_selection,0, 0, width, height, clear=False, flag=libtcod.BKGND_DEFAULT)
+		statsbox = libtcod.console_new(width, height)
+		libtcod.console_print_frame(statsbox,0, 0, width, height, clear=False, flag=libtcod.BKGND_DEFAULT)
+		statblock = catalog.ccreation_stats(choice) ## comes in a list of strings because fuck my ass
+		for line in statblock:
+			libtcod.console_print_ex(statsbox, 1, statblock.index(line)+1,libtcod.BKGND_NONE, libtcod.LEFT, line)
+		libtcod.console_print_ex(statsbox, 1, 60,libtcod.BKGND_NONE, libtcod.LEFT, 'Press enter to accept selection')
 
-	libtcod.console_blit(menu_selection,0,0,0,0,0,2,0)
-	libtcod.console_flush()
+		libtcod.console_blit(statsbox, 0, 0, 0, 0, 0, 2, height + 2)
 
-	key = libtcod.console_wait_for_keypress(True)
-	key_char = chr(key.c)
+	def descriptionbox(self,choice):
+		width = SCREEN_WIDTH/3 - 2 
+		height = SCREEN_HEIGHT/2
 
-	if key_char == 'a':
-		race_description_box('human')
-		charstat_box()
+		description_box = libtcod.console_new(width, height)
+		libtcod.console_set_alignment(description_box, libtcod.CENTER)
+		text = catalog.ccreation_description(choice)
+		libtcod.console_print_rect(description_box, width/2+2, height*2/3, width-5, height, text)
+		libtcod.console_print_frame(description_box,0, 0, width, height, clear=False, flag=libtcod.BKGND_DEFAULT)
 
-	key = libtcod.console_wait_for_keypress(True)
-
-	if key == libtcod.KEY_ENTER:
-		pass
+		libtcod.console_blit(description_box, 0, 0, 0, 0, 0, (width*2)+2, 0)
 
 		
 
+	def choicebox(self):
+		##################RACERACERACERACERACERACERACE##########################
+		width = (SCREEN_WIDTH*2)/3+1
+		height = SCREEN_HEIGHT/2
+		menu_selection = libtcod.console_new(width, height)
+		letter_index = ord('a')
+		y = 2
+		x = 2
+		if self.stage == 'race select':
+			requested_list = catalog.FULL_RACELIST
+		elif self.stage == 'class select':
+			requested_list = catalog.FULL_CLASSLIST
 
-	#######################################################################
+		for option_text in requested_list:
+			text = ' ' + chr(letter_index) +'  -  ' + option_text
+			libtcod.console_print_ex(menu_selection, x, y, libtcod.BKGND_NONE, libtcod.LEFT, text)
 
-def race_description_box(race):
-	width = SCREEN_WIDTH/3 - 2 
-	height = SCREEN_HEIGHT/2
+			y += 2
+			if y > SCREEN_HEIGHT/2 - 1:
+				x += 8
+				y = 2
+			letter_index += 1
+		##########################################################################
+		libtcod.console_print_frame(menu_selection,0, 0, width, height, clear=False, flag=libtcod.BKGND_DEFAULT)
+		libtcod.console_blit(menu_selection,0,0,0,0,0,2,0)
+		libtcod.console_flush()
 
-	description_box = libtcod.console_new(width, height)
-	libtcod.console_set_alignment(description_box, libtcod.CENTER)
-	text = catalog.race_description(race)
-	libtcod.console_print_rect(description_box, width/2, height*2/3, width, height, text)
-	libtcod.console_print_frame(description_box,0, 0, width, height, clear=False, flag=libtcod.BKGND_DEFAULT)
+		key = libtcod.console_wait_for_keypress(True)
 
-	libtcod.console_blit(description_box, 0, 0, 0, 0, 0, (width*2)+2, 0)
-	libtcod.console_flush()
+		if key.vk == libtcod.KEY_ENTER and self.stage == 'race select':
+			self.stage = 'class select'
+			return self.chosenrace
 
+		elif key.vk == libtcod.KEY_ENTER and self.stage == 'class select':
+			self.stage = 'complete'
+			return self.chosenclass
 
-def charstat_box():
-	width = SCREEN_WIDTH -6
-	height = SCREEN_HEIGHT/2 -2
-	statsbox = libtcod.console_new(width, height)
-	libtcod.console_print_frame(statsbox,0, 0, width, height, clear=False, flag=libtcod.BKGND_DEFAULT)
-	for i in range(1,5):
-		libtcod.console_print_ex(statsbox, 1, i*2, libtcod.BKGND_NONE, libtcod.LEFT, 'PLACEHOLDER PLACEHOLDER PLACEHOLDER PLACEHOLDER PLACEHOLDER')
-		libtcod.console_print_ex(statsbox, 63, 2, libtcod.BKGND_NONE, libtcod.LEFT, 'Press Enter to confirm selection.')
-
-	libtcod.console_blit(statsbox, 0, 0, 0, 0, 0, 2, height + 2)
-	libtcod.console_flush()
-
+		index = key.c - ord('a')
+		if index >= 0 and index < len(requested_list): 
+			return requested_list[index] ### returns the name of the chosen class or race as per catalog list
+		return None
+		
+		#######################################################################
 
 
 def menu(header, options, width):
@@ -1241,6 +1266,7 @@ libtcod.console_init_root(SCREEN_WIDTH, SCREEN_HEIGHT, 'python/libtcod tutorial'
 libtcod.sys_set_fps(LIMIT_FPS)
 con = libtcod.console_new(MAP_WIDTH, MAP_HEIGHT)
 panel = libtcod.console_new(SCREEN_WIDTH, PANEL_HEIGHT)
+ccreation = Ccreation()
 
 
 
