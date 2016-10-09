@@ -61,7 +61,10 @@ def get_item_description(itemname):
 		description = ['Scrap metal sword',
 				'A sword made out of spare scrap metal.',
 				'Metal spurs protrude from the dull blade and veins of rust run across it.',
-				"Barely usable as a weapon, but still better than your fists. Just don't cut yourself."]
+				"Barely usable as a weapon, but still better than your fists. Just don't cut yourself.",
+				'',
+				'Damage roll: 2-3',
+				'Strength bonus: 30%%']
 
 	elif itemname == 'crude grenade':
 		description = ['Crude grenade',
@@ -77,14 +80,14 @@ def get_item_description(itemname):
 
 	return description
 
-def get_item_special(itemname):
-	if itemname == 'scrap metal sword':
+def get_item_special(item):
+	if item.owner.name == 'scrap metal sword':
 		special = 'str bonus'
 		value = 0.3
 
-	else: return ['empty',None, None]
+	else: return [None, None, None]
 
-	return [itemname, special, value]
+	return [item.owner.name, special, value]
 
 
 

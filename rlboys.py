@@ -55,7 +55,7 @@ color_light_wall = libtcod.Color(130, 110, 50)
 color_light_ground = libtcod.Color(200, 180, 50)
 
 class Player:
-	def __init__(self, race = 'human', gclass = 'warden', stats = {'strength':5,'constitution':5,'agility':5,'intelligence':5,'attunement':5}, skills = {'combat':0,'tech':0,'ritual':0}, perks = [],abilities = []):
+	def __init__(self, race = 'human', gclass = 'warden', stats = {'strength':30,'constitution':5,'agility':5,'intelligence':5,'attunement':5}, skills = {'combat':0,'tech':0,'ritual':0}, perks = [],abilities = []):
 		self.race = race
 		self.gclass = gclass
 		self.stats = stats
@@ -165,16 +165,17 @@ class Equipment:
 		self.dodge_bonus = dodge_bonus
 		self.armor_bonus = armor_bonus
 
-	def equip(self):
+	def equip(self,equipper):
 		#equip object and show a message about it
-		self.is_equipped = True
-		if self.owner == player and self.catalog.get_item_special() is not None:
-			self.apply_special()  # all unique weapon effects (defined in catalog) apply once equipped
-		message('Equipped ' + self.owner.name + ' on your ' + self.slot + '.', libtcod.light_green)
+		if equipper == 'player':
+			self.is_equipped = True
+			if (catalog.get_item_special(self) != [None, None, None]):
+				self.apply_special()  # all unique weapon effects (defined in catalog) apply once equipped
+			message('Equipped ' + self.owner.name + ' on your ' + self.slot + '.', libtcod.light_green)
 
 	def apply_special(self):
-		special_list = self.catalog.get_item_special() # special list is in the form [item_name, special_name, special_value(0 if not applicable)]
-		if special_list[1] == 'str_bonus':
+		special_list = catalog.get_item_special(self) # special list is in the form [item_name, special_name, special_value(0 if not applicable)]
+		if special_list[1] == 'str bonus':
 			self.str_bonus = special_list[2]
 
 	def dequip(self):
@@ -299,13 +300,13 @@ class Fighter:
 		items_rolled_dmg = sum(equipment.roll_dmg() for equipment in all_items_equipped)
 		if self.owner is player:
 			for equip in all_items_equipped:
-				if catalog.get_item_special(self.owner.name)[1] == 'str bonus':
-					weapon_str_bonus = self.str_bonus
+				if catalog.get_item_special(equip)[1] == 'str bonus':
+					weapon_str_bonus = equip.str_bonus
 					break  #by convention, lets say only weapons can have a strength bonus
 				
-			fighter_str_bonus = player.player.stats['strength'] * weapon_str_bonus
+			fighter_str_bonus = int(round(self.owner.player.stats['strength'] * weapon_str_bonus))
 		else:
-			fighter_str_bonus = 0
+			pass
 		
 		multiplicative_component = items_rolled_dmg + fighter_str_bonus
 		full_damage = (multiplicative_component * product(multiplier_component)) + flat_bonus
@@ -651,7 +652,7 @@ def handle_keys():
 					if chosen_equipment is None:
 						msgbox('You have no equippable items in your inventory.')
 					else:
-						chosen_equipment.equip()
+						chosen_equipment.equip('player')
 
 				else: # e shows equipped items
 					chosen_item = equipment_menu('Press a key for more options, or any other to cancel.\n')
