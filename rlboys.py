@@ -779,7 +779,6 @@ def get_items_of_depthlevel(desired_depth = 1):
 
 
 def get_random_item_of_depthlevel(desired_depth = 1):
-	raise ValueError(desired_depth)
 	itemlist = get_items_of_depthlevel(desired_depth)
 	itemdict = {}
 	for item in itemlist:
@@ -1154,7 +1153,7 @@ def textbox(lines): # takes text as a list of (str)lines and displays it
 
 
 def menu(header, options, width):
-	if len(options) > 26:
+	if len(options) > 26: raise ValueError('Cannot have a menu with more than 26 options.')
 	header_height = libtcod.console_get_height_rect(con, 0, 0, width, SCREEN_HEIGHT, header)
 	height = len(options) + header_height
 
