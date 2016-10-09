@@ -57,7 +57,7 @@ color_light_ground = libtcod.Color(200, 180, 50)
 class Player:
 	def __init__(self, race = 'human', gclass = 'warden', stats = {'strength':5,'constitution':5,'agility':5,'intelligence':5,'attunement':5}, skills = {'combat':0,'tech':0,'ritual':0}, perks = [],abilities = []):
 		self.race = race
-		self.gclass = gclass
+		self.gclass = gclass #gclass for game class
 		self.stats = stats
 		self.skills = skills
 		self.perks = perks
@@ -75,10 +75,10 @@ class Ccreation:
 		#global player
 		while self.stage != 'complete':
 			if self.stage == 'race select':
-				self.descriptionbox(self.chosenrace)
+				self.descriptionbox(self.chosenrace) 
 				self.statbox(self.chosenrace)
 				self.chosenrace = self.choicebox()
-			elif self.stage == 'class select':
+			elif self.stage == 'class select': #loops between this and choicebox until creation is done
 				self.descriptionbox(self.chosengclass)
 				self.statbox(self.chosengclass)
 				self.chosengclass = self.choicebox()
@@ -98,7 +98,7 @@ class Ccreation:
 			libtcod.console_print_ex(statsbox, 1, statblock.index(line)+1,libtcod.BKGND_NONE, libtcod.LEFT, line)
 		libtcod.console_print_ex(statsbox, 1, 60,libtcod.BKGND_NONE, libtcod.LEFT, 'Press enter to accept selection')
 
-		libtcod.console_blit(statsbox, 0, 0, 0, 0, 0, 2, height + 2)
+		libtcod.console_blit(statsbox, 0, 0, 0, 0, 0, 2, height + 2) #creates and prints to the statbox that takes up the lower half of the screen in char creation
 
 	def descriptionbox(self,choice):
 		width = SCREEN_WIDTH/3 - 2 
@@ -110,7 +110,7 @@ class Ccreation:
 		libtcod.console_print_rect(description_box, width/2+2, height*2/3, width-5, height, text)
 		libtcod.console_print_frame(description_box,0, 0, width, height, clear=False, flag=libtcod.BKGND_DEFAULT)
 
-		libtcod.console_blit(description_box, 0, 0, 0, 0, 0, (width*2)+2, 0)
+		libtcod.console_blit(description_box, 0, 0, 0, 0, 0, (width*2)+2, 0) #creates and prints to the description box that takes up the upper left side of the screen in char creation
 
 		
 
@@ -142,7 +142,7 @@ class Ccreation:
 
 		key = libtcod.console_wait_for_keypress(True)
 
-		if key.vk == libtcod.KEY_ENTER and self.stage == 'race select':
+		if key.vk == libtcod.KEY_ENTER and self.stage == 'race select':   # this is where the stage cycling takes place
 			self.stage = 'class select'
 			return self.chosenrace
 
@@ -183,7 +183,7 @@ class Equipment:
 		self.is_equipped = False
 		message('Unequipped ' + self.owner.name + ' from ' + self.slot + '.', libtcod.light_yellow)
 
-	def equip_options(self):
+	def equip_options(self): #upon getting chosen from the equipment menu
 		options = ['Examine', 'Unequip', 'Drop']
 		index = menu('Choose an action: ', options, 50)
 		if index == 0:#examine
@@ -309,8 +309,10 @@ class Fighter:
 			pass
 		
 		multiplicative_component = items_rolled_dmg + fighter_str_bonus
-		full_damage = (multiplicative_component * product(multiplier_component)) + flat_bonus
-		return full_damage
+
+
+		full_damage = (multiplicative_component * product(multiplier_component)) + flat_bonus #final damage formula after all modifiers and before defenses apply
+		return full_damage																		
 
 	@property
 	def armor(self):  #return actual defense, by summing up the bonuses from all equipped items
@@ -512,7 +514,6 @@ def play_game():
 	render_all()
 	lovemessage = ['the game begins','some kind of lore goes here',"but for now its a placeholder","placeholder placeholder"]
 	textbox(lovemessage)
-	#OPTIONAL STUFF
 
 	while not libtcod.console_is_window_closed():
 
@@ -763,7 +764,7 @@ def create_item_rngtable(depth_level = 1): # this gonna get modified to shit bef
 	return output_items
 
 def get_items_of_depthlevel(desired_depth = 1):
-	itemlist = get_full_item_list() # gets all the items of a desired depth level RETURNS ITEM OBJECTS
+	itemlist = get_full_item_list() # gets all the items of a desired depth level -- RETURNS ITEM OBJECTS
 	depth_items = []
 	for item_obj in itemlist:
 		if item_obj.item.depth_level == desired_depth:
@@ -825,25 +826,24 @@ def render_all():
 						libtcod.console_put_char_ex(con, x, y, '#', color_dark_wall, libtcod.black)
 					else:
 						libtcod.console_put_char_ex(con, x, y, '.', color_dark_ground, libtcod.black )
-			elif visible:
+			else: #it's visible
 				if wall:
 					libtcod.console_put_char_ex(con, x, y, '#', color_light_wall, libtcod.black)
 				else:
 					libtcod.console_put_char_ex(con, x, y, '.', color_light_ground, libtcod.black )
 				map[x][y].explored = True
 
-	libtcod.console_set_default_foreground(con, libtcod.white)
-	libtcod.console_set_default_background(panel, libtcod.black)
-	libtcod.console_clear(panel)
 
-	render_bar(1, 1, BAR_WIDTH, 'Health', player.fighter.hp, player.fighter.max_hp, libtcod.dark_red, libtcod.darkest_red) # display health
-	libtcod.console_print_ex(panel, 1, 3, libtcod.BKGND_NONE, libtcod.LEFT, 'Dungeon level ' + str(dungeon_level))  #display dungeon level
-
-	player.send_to_front() #always draw player
 	for object in objects:
 		object.draw()
+	player.draw()
+
+	#blits the content of the 'con' console to the root console
+	libtcod.console_blit(con, 0, 0, MAP_WIDTH, MAP_HEIGHT, 0, 0, 0)
 
 
+	libtcod.console_set_default_background(panel, libtcod.black)
+	libtcod.console_clear(panel)
 	#print game messages, one line at a time
 	y = 1
 	for (line, color) in game_msgs:
@@ -851,11 +851,10 @@ def render_all():
 		libtcod.console_print_ex(panel,MSG_X, y, libtcod.BKGND_NONE, libtcod. LEFT, line)
 		y += 1
 
+	render_bar(1, 1, BAR_WIDTH, 'Health', player.fighter.hp, player.fighter.max_hp, libtcod.dark_red, libtcod.darkest_red) # display health
+	libtcod.console_print_ex(panel, 1, 3, libtcod.BKGND_NONE, libtcod.LEFT, 'Dungeon level ' + str(dungeon_level))  #display dungeon level
 
-
-
-	#blits the content of the 'con' console to the root console
-	libtcod.console_blit(con, 0, 0, MAP_WIDTH, MAP_HEIGHT, 0, 0, 0)
+	
 	#blits the content of the 'panel' console to the root console
 	libtcod.console_blit(panel, 0, 0, SCREEN_WIDTH, PANEL_HEIGHT, 0, 0, PANEL_Y)
 
