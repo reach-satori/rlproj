@@ -55,7 +55,7 @@ color_light_wall = libtcod.Color(130, 110, 50)
 color_light_ground = libtcod.Color(200, 180, 50)
 
 class Player:
-	def __init__(self, race = 'human', gclass = 'warden', stats = {'strength':30,'constitution':5,'agility':5,'intelligence':5,'attunement':5}, skills = {'combat':0,'tech':0,'ritual':0}, perks = [],abilities = []):
+	def __init__(self, race = 'human', gclass = 'warden', stats = {'strength':5,'constitution':5,'agility':5,'intelligence':5,'attunement':5}, skills = {'combat':0,'tech':0,'ritual':0}, perks = [],abilities = []):
 		self.race = race
 		self.gclass = gclass
 		self.stats = stats
@@ -93,7 +93,7 @@ class Ccreation:
 
 		statsbox = libtcod.console_new(width, height)
 		libtcod.console_print_frame(statsbox,0, 0, width, height, clear=False, flag=libtcod.BKGND_DEFAULT)
-		statblock = catalog.ccreation_stats(choice) ## comes in a list of strings because fuck my ass
+		statblock = catalog.ccreation_stats(choice) ## text for the statblock, comes in a list of strings because fuck everything
 		for line in statblock:
 			libtcod.console_print_ex(statsbox, 1, statblock.index(line)+1,libtcod.BKGND_NONE, libtcod.LEFT, line)
 		libtcod.console_print_ex(statsbox, 1, 60,libtcod.BKGND_NONE, libtcod.LEFT, 'Press enter to accept selection')
@@ -302,7 +302,7 @@ class Fighter:
 			for equip in all_items_equipped:
 				if catalog.get_item_special(equip)[1] == 'str bonus':
 					weapon_str_bonus = equip.str_bonus
-					break  #by convention, lets say only weapons can have a strength bonus
+					break #also this break will be removed later #by convention, lets say only weapons can have a strength bonus
 				
 			fighter_str_bonus = int(round(self.owner.player.stats['strength'] * weapon_str_bonus))
 		else:
@@ -510,7 +510,7 @@ def play_game():
 	mouse = libtcod.Mouse()
 
 	render_all()
-	lovemessage = ['the game begins','go fuck yourself','go fuck yourself','go fuck yourself','go fuck yourself','go fuck yourself','go fuck yourself']
+	lovemessage = ['the game begins','some kind of lore goes here',"but for now its a placeholder","placeholder placeholder"]
 	textbox(lovemessage)
 	#OPTIONAL STUFF
 
@@ -583,15 +583,8 @@ def next_level():
 	dungeon_level += 1
 	message('You descend further into the bowels of the earth.', libtcod.dark_violet)
 	make_map()
+
 	initialize_fov()
-	
-
-def clear_map():
-	global map
-	map = [[Tile(True)
-		for y in range(MAP_HEIGHT)]
-			for x in range(MAP_WIDTH)]
-
 	
 
 
@@ -872,7 +865,7 @@ def clear_screen():
 		for x in range(SCREEN_WIDTH):
 			libtcod.console_put_char_ex(clearer, x, y, ' ', libtcod.black, libtcod.black)
 			libtcod.console_blit(clearer,0,0,0,0,0,0,0)
-
+			libtcod.console_flush
 def create_room(room):
 	global map
 	for x in range(room.x1+1,room.x2):
@@ -939,7 +932,7 @@ def generate_item(name, x, y): #RETURNS HIGHEST OBJECT, NOT ITEM OR EQUIP COMPON
 	elif name == 'scrap metal sword':
 		item_component = Item(weight = 10, depth_level = 1)
 		equipment_component = Equipment(slot='right hand', base_dmg = (2,3))
-		item = Object(x, y, '/', 'scrap metal sword', libtcod.desaturated_blue, ignore_fov = True, item = item_component, equipment=equipment_component)
+		item = Object(x, y, '/', 'scrap metal sword', libtcod.desaturated_blue, item = item_component, equipment=equipment_component)
 
 	return item
 
