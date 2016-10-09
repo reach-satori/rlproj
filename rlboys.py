@@ -584,6 +584,7 @@ def next_level():
 	dungeon_level += 1
 	message('You descend further into the bowels of the earth.', libtcod.dark_violet)
 	make_map()
+	clear_screen()
 
 	initialize_fov()
 	
@@ -862,9 +863,8 @@ def clear_screen():
 	clearer = libtcod.console_new(SCREEN_WIDTH, SCREEN_HEIGHT)
 	for y in range(SCREEN_HEIGHT):
 		for x in range(SCREEN_WIDTH):
-			libtcod.console_put_char_ex(clearer, x, y, ' ', libtcod.black, libtcod.black)
+			libtcod.console_put_char_ex(con, x, y, ' ', color_dark_wall, libtcod.black)
 			libtcod.console_blit(clearer,0,0,0,0,0,0,0)
-			libtcod.console_flush
 def create_room(room):
 	global map
 	for x in range(room.x1+1,room.x2):
