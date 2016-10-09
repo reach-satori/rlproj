@@ -25,7 +25,7 @@ FULL_RACELIST = ['human',
 				'placeholder',
 				'placeholder']
 
-FULL_CLASSLIST = ['warden',
+FULL_GCLASSLIST = ['warden',
 				'placeholder1',
 				'placeholder2']
 
@@ -58,19 +58,33 @@ def ccreation_stats(choice):
 
 def get_item_description(itemname):
 	if itemname == 'scrap metal sword':
-		return ['Scrap metal sword',
+		description = ['Scrap metal sword',
 				'A sword made out of spare scrap metal.',
 				'Metal spurs protrude from the dull blade and veins of rust run across it.',
 				"Barely usable as a weapon, but still better than your fists. Just don't cut yourself."]
 
 	elif itemname == 'crude grenade':
-		return ['Crude grenade',
+		description = ['Crude grenade',
 				'placeholder']
 
 	elif itemname == 'healing salve':
-		return ['Healing salve',
+		description = ['Healing salve',
 				'placeholder']
 
 	elif itemname == 'pipe gun':
-		return ['Pipe gun',
+		description = ['Pipe gun',
 				'placeholder']
+
+	return description
+
+def get_item_special(itemname):
+	if itemname == 'scrap metal sword':
+		special = 'str bonus'
+		value = 0.3
+
+	else: return ['empty',None, None]
+
+	return [itemname, special, value]
+
+
+

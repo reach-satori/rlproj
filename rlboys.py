@@ -54,18 +54,128 @@ color_dark_ground = libtcod.Color(50, 50, 150)
 color_light_wall = libtcod.Color(130, 110, 50)
 color_light_ground = libtcod.Color(200, 180, 50)
 
+class Player:
+	def __init__(self, race = 'human', gclass = 'warden', stats = {'strength':5,'constitution':5,'agility':5,'intelligence':5,'attunement':5}, skills = {'combat':0,'tech':0,'ritual':0}, perks = [],abilities = []):
+		self.race = race
+		self.gclass = gclass
+		self.stats = stats
+		self.skills = skills
+		self.perks = perks
+		self.abilities = abilities
+
+class Ccreation:
+
+	def __init__(self,stage = 'race select', chosenrace = 'empty', chosengclass = 'empty', chosenperk = 'empty'):
+		self.stage = stage
+		self.chosenrace = chosenrace
+		self.chosengclass = chosengclass
+		self.chosenperk = chosenperk
+
+	def run_creation(self):
+		#global player
+		while self.stage != 'complete':
+			if self.stage == 'race select':
+				self.descriptionbox(self.chosenrace)
+				self.statbox(self.chosenrace)
+				self.chosenrace = self.choicebox()
+			elif self.stage == 'class select':
+				self.descriptionbox(self.chosengclass)
+				self.statbox(self.chosengclass)
+				self.chosengclass = self.choicebox()
+		#return Player(self.chosenrace, self.chosengclass,)
+
+
+
+
+	def statbox(self,choice):
+		width = SCREEN_WIDTH -6
+		height = SCREEN_HEIGHT/2 -2
+
+		statsbox = libtcod.console_new(width, height)
+		libtcod.console_print_frame(statsbox,0, 0, width, height, clear=False, flag=libtcod.BKGND_DEFAULT)
+		statblock = catalog.ccreation_stats(choice) ## comes in a list of strings because fuck my ass
+		for line in statblock:
+			libtcod.console_print_ex(statsbox, 1, statblock.index(line)+1,libtcod.BKGND_NONE, libtcod.LEFT, line)
+		libtcod.console_print_ex(statsbox, 1, 60,libtcod.BKGND_NONE, libtcod.LEFT, 'Press enter to accept selection')
+
+		libtcod.console_blit(statsbox, 0, 0, 0, 0, 0, 2, height + 2)
+
+	def descriptionbox(self,choice):
+		width = SCREEN_WIDTH/3 - 2 
+		height = SCREEN_HEIGHT/2
+
+		description_box = libtcod.console_new(width, height)
+		libtcod.console_set_alignment(description_box, libtcod.CENTER)
+		text = catalog.ccreation_description(choice)
+		libtcod.console_print_rect(description_box, width/2+2, height*2/3, width-5, height, text)
+		libtcod.console_print_frame(description_box,0, 0, width, height, clear=False, flag=libtcod.BKGND_DEFAULT)
+
+		libtcod.console_blit(description_box, 0, 0, 0, 0, 0, (width*2)+2, 0)
+
+		
+
+	def choicebox(self):
+		width = (SCREEN_WIDTH*2)/3+1
+		height = SCREEN_HEIGHT/2
+		menu_selection = libtcod.console_new(width, height)
+		letter_index = ord('a')
+		y = 2
+		x = 2
+		if self.stage == 'race select':
+			requested_list = catalog.FULL_RACELIST
+		elif self.stage == 'class select':
+			requested_list = catalog.FULL_GCLASSLIST
+
+		for option_text in requested_list:
+			text = ' ' + chr(letter_index) +'  -  ' + option_text
+			libtcod.console_print_ex(menu_selection, x, y, libtcod.BKGND_NONE, libtcod.LEFT, text)
+
+			y += 2
+			if y > SCREEN_HEIGHT/2 - 1:
+				x += 8
+				y = 2
+			letter_index += 1
+
+		libtcod.console_print_frame(menu_selection,0, 0, width, height, clear=False, flag=libtcod.BKGND_DEFAULT)
+		libtcod.console_blit(menu_selection,0,0,0,0,0,2,0)
+		libtcod.console_flush()
+
+		key = libtcod.console_wait_for_keypress(True)
+
+		if key.vk == libtcod.KEY_ENTER and self.stage == 'race select':
+			self.stage = 'class select'
+			return self.chosenrace
+
+		elif key.vk == libtcod.KEY_ENTER and self.stage == 'class select':
+			self.stage = 'complete'
+			return self.chosengclass
+
+		index = key.c - ord('a')
+		if index >= 0 and index < len(requested_list): 
+			return requested_list[index] ### returns the name of the chosen class or race or whatever as per catalog list
+		return None
+		
+		#######################################################################
+
 class Equipment:
-	def __init__(self, slot, power_bonus = 0, armor_bonus = 0, dodge_bonus = 0):
+	def __init__(self, slot, base_dmg = [0,0], armor_bonus = 0, dodge_bonus = 0):
 		self.slot = slot
 		self.is_equipped = False
-		self.power_bonus = power_bonus
+		self.base_dmg = base_dmg
 		self.dodge_bonus = dodge_bonus
 		self.armor_bonus = armor_bonus
 
 	def equip(self):
 		#equip object and show a message about it
 		self.is_equipped = True
+		if self.owner == player and self.catalog.get_item_special() is not None:
+			self.apply_special()  # all unique weapon effects (defined in catalog) apply once equipped
 		message('Equipped ' + self.owner.name + ' on your ' + self.slot + '.', libtcod.light_green)
+
+	def apply_special(self):
+		special_list = self.catalog.get_item_special() # special list is in the form [item_name, special_name, special_value(0 if not applicable)]
+		if special_list[1] == 'str_bonus':
+			self.str_bonus = special_list[2]
 
 	def dequip(self):
 		if not self.is_equipped: return
@@ -84,6 +194,11 @@ class Equipment:
 		elif index == 2: #drop (and unequip)
 			self.unequip()
 			self.owner.item.drop()
+
+	def roll_dmg(self):
+		if self.base_dmg == [0,0]: return 0
+		else:
+			return libtcod.random_get_int(0, self.base_dmg[0], self.base_dmg[1])
 
 
 class Item:
@@ -168,10 +283,33 @@ class Fighter:
 		if self.hp > self.max_hp:
 			self.hp = self.max_hp
 
+
+
+
+
+
 	@property
 	def power(self):
-		bonus = sum(equipment.power_bonus for equipment in get_all_equipped(self.owner))
-		return self.base_power + bonus
+		flat_bonus = 2
+		fighter_str_bonus = 0
+		weapon_str_bonus = 0
+		multiplier_component = [1]
+
+		all_items_equipped = get_all_equipped(self.owner)
+		items_rolled_dmg = sum(equipment.roll_dmg() for equipment in all_items_equipped)
+		if self.owner is player:
+			for equip in all_items_equipped:
+				if catalog.get_item_special(self.owner.name)[1] == 'str bonus':
+					weapon_str_bonus = self.str_bonus
+					break  #by convention, lets say only weapons can have a strength bonus
+				
+			fighter_str_bonus = player.player.stats['strength'] * weapon_str_bonus
+		else:
+			fighter_str_bonus = 0
+		
+		multiplicative_component = items_rolled_dmg + fighter_str_bonus
+		full_damage = (multiplicative_component * product(multiplier_component)) + flat_bonus
+		return full_damage
 
 	@property
 	def armor(self):  #return actual defense, by summing up the bonuses from all equipped items
@@ -227,7 +365,7 @@ class Tile:
 		if block_sight is None:	self.block_sight = blocked
 		
 class Object:
-	def __init__(self,x, y, char, name, color, blocks = False, fighter = None, ai = None, item = None, ignore_fov = False, equipment = None):
+	def __init__(self,x, y, char, name, color, blocks = False, fighter = None, ai = None, item = None, ignore_fov = False, equipment = None, player = None):
 		self.x = x
 		self.y = y
 		self.char = char
@@ -235,6 +373,7 @@ class Object:
 		self.blocks = blocks
 		self.name = name
 		self.ignore_fov = ignore_fov
+		self.player = player
 
 
 		self.item = item
@@ -317,7 +456,7 @@ def main_menu():
 
 		if choice == 0:  #new game
 			initialize_player()
-			ccreation.begin_creation()
+			ccreation.run_creation()
 			clear_screen()
 			new_game()
 			play_game()
@@ -780,8 +919,8 @@ def generate_item(name, x, y): #RETURNS HIGHEST OBJECT, NOT ITEM OR EQUIP COMPON
 		item = Object(x, y, '?', 'crude grenade', libtcod.dark_red, None, None, None, item = item_component)
 	elif name == 'scrap metal sword':
 		item_component = Item(weight = 10, depth_level = 2)
-		equipment_component = Equipment(slot='right hand')
-		item = Object(x, y, '/', 'scrap metal sword', libtcod.desaturated_blue, item = item_component, equipment=equipment_component)
+		equipment_component = Equipment(slot='right hand', base_dmg = (2,3))
+		item = Object(x, y, '/', 'scrap metal sword', libtcod.desaturated_blue, ignore_fov = True, item = item_component, equipment=equipment_component)
 
 	return item
 
@@ -832,6 +971,12 @@ def is_blocked(x,y):
 			return True
 
 	return False
+
+def product(iterable):
+    p= 1
+    for n in iterable:
+        p *= n
+    return p
 
 def player_move_or_attack(dx,dy):
 	global fov_recompute
@@ -986,96 +1131,7 @@ def textbox(lines): # takes text as a list of (str)lines and displays it
 	libtcod.console_flush()
 	ignore = libtcod.console_wait_for_keypress(True)
 
-class Ccreation:
 
-	def __init__(self,stage = 'race select',chosenrace = 'empty',chosenclass = 'empty',chosenperk = 'empty'):
-		self.stage = stage
-		self.chosenrace = chosenrace
-		self.chosenclass = chosenclass
-		self.chosenperk = chosenperk
-
-	def begin_creation(self):
-		while self.stage != 'complete':
-			if self.stage == 'race select':
-				self.descriptionbox(self.chosenrace)
-				self.statbox(self.chosenrace)
-				self.chosenrace = self.choicebox()
-			elif self.stage == 'class select':
-				self.descriptionbox(self.chosenclass)
-				self.statbox(self.chosenclass)
-				self.chosenclass = self.choicebox()
-
-
-	def statbox(self,choice):
-		width = SCREEN_WIDTH -6
-		height = SCREEN_HEIGHT/2 -2
-
-		statsbox = libtcod.console_new(width, height)
-		libtcod.console_print_frame(statsbox,0, 0, width, height, clear=False, flag=libtcod.BKGND_DEFAULT)
-		statblock = catalog.ccreation_stats(choice) ## comes in a list of strings because fuck my ass
-		for line in statblock:
-			libtcod.console_print_ex(statsbox, 1, statblock.index(line)+1,libtcod.BKGND_NONE, libtcod.LEFT, line)
-		libtcod.console_print_ex(statsbox, 1, 60,libtcod.BKGND_NONE, libtcod.LEFT, 'Press enter to accept selection')
-
-		libtcod.console_blit(statsbox, 0, 0, 0, 0, 0, 2, height + 2)
-
-	def descriptionbox(self,choice):
-		width = SCREEN_WIDTH/3 - 2 
-		height = SCREEN_HEIGHT/2
-
-		description_box = libtcod.console_new(width, height)
-		libtcod.console_set_alignment(description_box, libtcod.CENTER)
-		text = catalog.ccreation_description(choice)
-		libtcod.console_print_rect(description_box, width/2+2, height*2/3, width-5, height, text)
-		libtcod.console_print_frame(description_box,0, 0, width, height, clear=False, flag=libtcod.BKGND_DEFAULT)
-
-		libtcod.console_blit(description_box, 0, 0, 0, 0, 0, (width*2)+2, 0)
-
-		
-
-	def choicebox(self):
-		##################RACERACERACERACERACERACERACE##########################
-		width = (SCREEN_WIDTH*2)/3+1
-		height = SCREEN_HEIGHT/2
-		menu_selection = libtcod.console_new(width, height)
-		letter_index = ord('a')
-		y = 2
-		x = 2
-		if self.stage == 'race select':
-			requested_list = catalog.FULL_RACELIST
-		elif self.stage == 'class select':
-			requested_list = catalog.FULL_CLASSLIST
-
-		for option_text in requested_list:
-			text = ' ' + chr(letter_index) +'  -  ' + option_text
-			libtcod.console_print_ex(menu_selection, x, y, libtcod.BKGND_NONE, libtcod.LEFT, text)
-
-			y += 2
-			if y > SCREEN_HEIGHT/2 - 1:
-				x += 8
-				y = 2
-			letter_index += 1
-		##########################################################################
-		libtcod.console_print_frame(menu_selection,0, 0, width, height, clear=False, flag=libtcod.BKGND_DEFAULT)
-		libtcod.console_blit(menu_selection,0,0,0,0,0,2,0)
-		libtcod.console_flush()
-
-		key = libtcod.console_wait_for_keypress(True)
-
-		if key.vk == libtcod.KEY_ENTER and self.stage == 'race select':
-			self.stage = 'class select'
-			return self.chosenrace
-
-		elif key.vk == libtcod.KEY_ENTER and self.stage == 'class select':
-			self.stage = 'complete'
-			return self.chosenclass
-
-		index = key.c - ord('a')
-		if index >= 0 and index < len(requested_list): 
-			return requested_list[index] ### returns the name of the chosen class or race as per catalog list
-		return None
-		
-		#######################################################################
 
 
 def menu(header, options, width):
@@ -1116,8 +1172,9 @@ def msgbox(message, width=50):
 
 def initialize_player():
 	global player
+	player_component = Player()
 	fighter_component = Fighter(hp=30, armor = 3, dodge = 3, power=3, xp = 0, death_function = player_death)
-	player = Object(0,0, '@', 'player', libtcod.white, blocks = True, fighter = fighter_component)
+	player = Object(0,0, '@', 'player', libtcod.white, blocks = True, fighter = fighter_component, player = player_component)
 	player.lvl = 1
 
 def target_tile(max_range = None):
