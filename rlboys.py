@@ -442,7 +442,7 @@ class Object:
 
 def normal_randomize(mean,sd): #input mean, sd for gauss distribution
 	floatnormal = gauss(float(mean),float(sd)) #output one sample, rounded and non-negative
-	if floatnormal < 1: floatnormal = 1
+	if floatnormal <= 1: return 1
 	return int(round(floatnormal))
 
 
@@ -579,12 +579,19 @@ def get_all_equipped(obj):  #returns a list of equipped items
 
 def next_level():
 	global dungeon_level
-
+	dungeon_level += 1
 	message('You descend further into the bowels of the earth.', libtcod.dark_violet)
-	clear_screen()
 	make_map()
 	initialize_fov()
-	dungeon_level += 1
+	
+
+def clear_map():
+	global map
+	map = [[Tile(True)
+		for y in range(MAP_HEIGHT)]
+			for x in range(MAP_WIDTH)]
+
+	
 
 
 
@@ -638,7 +645,7 @@ def handle_keys():
 					if object.x == player.x and object.y == player.y and object.item:
 						object.item.pick_up()
 
-			if key_char == 'e':
+			elif key_char == 'e':
 				if key.shift: # E (SHIFT E) prompts you to equip an item
 					chosen_equipment = action_equip_menu('Choose an item to equip:\n')
 					if chosen_equipment is None:
@@ -657,25 +664,28 @@ def handle_keys():
 					
 
 
-			if key_char == 'i':
+			elif key_char == 'i':
 				#show the inventory
 				chosen_item = inventory_menu('Press the key next to an item to use it, or any other to cancel.\n')
 				if chosen_item is not None:
 					chosen_item.item_options()
 
-			if key_char == 'd':
+			elif key_char == 'd':
 				#show the inventory; if an item is selected, drop it
 				chosen_item = inventory_menu('Press the key next to an item to drop it, or any other to cancel.\n')
 				if chosen_item is not None:
 					chosen_item.drop()
 
-			if key_char == '.':
+			elif key_char == 'l':
+				clear_screen()
+
+			elif key_char == '.':
 				if player.x == stairs.x and player.y == stairs.y:
 					next_level()
 				else:
 					message("You can't go down here!")
 
-			if key_char == 'c':
+			elif key_char == 'c':
 				#show character information
 				level_up_xp = LEVEL_UP_BASE + player.lvl * LEVEL_UP_FACTOR
 				msgbox('Character Information\n\nLevel: ' + str(player.lvl) + '\nExperience: ' + str(player.fighter.xp) +
@@ -691,6 +701,8 @@ def make_map():
 	map = [[Tile(True)
 		for y in range(MAP_HEIGHT)]
 			for x in range(MAP_WIDTH)]
+
+
 
 
 
@@ -742,14 +754,16 @@ def make_map():
 
 	place_items_in_level()
 
-def create_item_rngtable(dungeon_level = 1): # this gonna get modified to shit before this is over
+def create_item_rngtable(depth_level = 1): # this gonna get modified to shit before this is over
 	output_items = []					# returns list of (OBJECT)items to spawn in a dungeon level by calling get_random_item on a normal distribution of depthlevels
-	mean_items = 7 + dungeon_level  * 3
+	mean_items = 7 + depth_level  * 3
 
-	number_of_items = normal_randomize(mean_items, dungeon_level ** 0.5)
+	number_of_items = normal_randomize(mean_items, mean_items * 0.5) # chooses number of items to be created in a given dungeonlvl
+	if number_of_items <= 5: number_of_items = 5
 	for index in range(number_of_items):
-		item_depthlevel = normal_randomize(dungeon_level, 0.5 * dungeon_level)
-		randomized_item = get_random_item_of_depthlevel(item_depthlevel)
+		item_depthlevel = normal_randomize(depth_level, 0.5 ** depth_level) # for each item, chooses a depth level in a gauss curve
+		if item_depthlevel > 2: item_depthlevel = 2 # temporary max cap: should be exactly as high as the highest itemlevel possible
+		randomized_item = get_random_item_of_depthlevel(item_depthlevel) 
 		output_items.append(randomized_item)
 
 	return output_items
@@ -760,14 +774,16 @@ def get_items_of_depthlevel(desired_depth = 1):
 	for item_obj in itemlist:
 		if item_obj.item.depth_level == desired_depth:
 			depth_items.append(item_obj)
-
 	return depth_items
 
+
+
 def get_random_item_of_depthlevel(desired_depth = 1):
+	raise ValueError(desired_depth)
 	itemlist = get_items_of_depthlevel(desired_depth)
 	itemdict = {}
 	for item in itemlist:
-		itemdict[item.name] = 1 # can change this later with an item rarity attribute in object.item to weight it
+		itemdict[item.name] = 5 # can change this later with an item rarity attribute in object.item to weight it
 
 	choice = random_choice(itemdict)
 	choice = generate_item(choice,0,0)
@@ -876,24 +892,27 @@ def create_room(room):
 
 def random_choice_index(chances):  #choose one option from list of chances, returning its index
 	#the dice will land on some number between 1 and the sum of the chances
-	dice = libtcod.random_get_int(0, 1, sum(chances))
+	if chances == []: return 0
+	dice = libtcod.random_get_int(0, 0, sum(chances)) #getting a [] from random_choice  < get_random_item_of_depthlevel
+
  
 	#go through all chances, keeping the sum so far
 	running_sum = 0
 	choice = 0
 	for w in chances:
-		running_sum += w
+		running_sum += w         
  
 		#see if the dice landed in the part that corresponds to this choice
 		if dice <= running_sum:
-			return choice
+			return choice 
 		choice += 1
+
 
 def random_choice(chances_dict):
 	#choose one option from dictionary of chances, returning its key
 	chances = chances_dict.values()
 	strings = chances_dict.keys()
-	return strings[random_choice_index(chances)]
+	return strings[random_choice_index(chances)]  #here lies a bug that took a newbie a full beautiful sunday to squash, rip in piss
 
 def create_h_tunnel(x1,x2,y):
 	global map
@@ -918,7 +937,7 @@ def generate_item(name, x, y): #RETURNS HIGHEST OBJECT, NOT ITEM OR EQUIP COMPON
 		item_component = Item(weight = 1, depth_level = 2, use_function = consumable_crudenade)
 		item = Object(x, y, '?', 'crude grenade', libtcod.dark_red, None, None, None, item = item_component)
 	elif name == 'scrap metal sword':
-		item_component = Item(weight = 10, depth_level = 2)
+		item_component = Item(weight = 10, depth_level = 1)
 		equipment_component = Equipment(slot='right hand', base_dmg = (2,3))
 		item = Object(x, y, '/', 'scrap metal sword', libtcod.desaturated_blue, ignore_fov = True, item = item_component, equipment=equipment_component)
 
@@ -1258,7 +1277,7 @@ def target_monster(max_range=None):
 				return obj
 
 def clear_game():
-	global objects, map, inventory
+	global objects, inventory
 
 	for object in objects:
 		object.clear()
@@ -1282,7 +1301,6 @@ def new_game():
 
 	#create the list of game messages and their colors, starts empty
 	game_msgs = []
-	dungeon_level = 1 
 
 
 
