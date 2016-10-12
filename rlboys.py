@@ -54,14 +54,14 @@ color_dark_ground = libtcod.Color(50, 50, 150)
 color_light_wall = libtcod.Color(130, 110, 50)
 color_light_ground = libtcod.Color(200, 180, 50)
 
-class Player:
-	def __init__(self, race = 'human', gclass = 'warden', stats = {'strength':5,'constitution':5,'agility':5,'intelligence':5,'attunement':5}, skills = {'combat':0,'tech':0,'ritual':0}, perks = [],abilities = []):
-		self.race = race
-		self.gclass = gclass #gclass for game class
-		self.stats = stats
-		self.skills = skills
-		self.perks = perks
-		self.abilities = abilities
+
+
+class SkillTree:
+	def __init__(self, ctype, level):
+		self.ctype = ctype
+		self.level = level
+
+
 
 class Ccreation:
 
@@ -72,7 +72,7 @@ class Ccreation:
 		self.chosenperk = chosenperk
 
 	def run_creation(self):
-		#global player
+		global ctree, ttree, rtree #player
 		while self.stage != 'complete':
 			if self.stage == 'race select':
 				self.descriptionbox(self.chosenrace) 
@@ -82,10 +82,13 @@ class Ccreation:
 				self.descriptionbox(self.chosengclass)
 				self.statbox(self.chosengclass)
 				self.chosengclass = self.choicebox()
+
+		ctree = SkillTree('combat',0)
+		ttree = SkillTree('tech',0)
+		rtree = SkillTree('ritual',0)
+
+		clear_screen()
 		#return Player(self.chosenrace, self.chosengclass,)
-
-
-
 
 	def statbox(self,choice):
 		width = SCREEN_WIDTH -6
@@ -96,7 +99,7 @@ class Ccreation:
 		statblock = catalog.ccreation_stats(choice) ## text for the statblock, comes in a list of strings because fuck everything
 		for line in statblock:
 			libtcod.console_print_ex(statsbox, 1, statblock.index(line)+1,libtcod.BKGND_NONE, libtcod.LEFT, line)
-		libtcod.console_print_ex(statsbox, 1, 60,libtcod.BKGND_NONE, libtcod.LEFT, 'Press enter to accept selection')
+		libtcod.console_print_ex(statsbox, 1, 60, libtcod.BKGND_NONE, libtcod.LEFT, 'Press enter to accept selection')
 
 		libtcod.console_blit(statsbox, 0, 0, 0, 0, 0, 2, height + 2) #creates and prints to the statbox that takes up the lower half of the screen in char creation
 
@@ -111,8 +114,6 @@ class Ccreation:
 		libtcod.console_print_frame(description_box,0, 0, width, height, clear=False, flag=libtcod.BKGND_DEFAULT)
 
 		libtcod.console_blit(description_box, 0, 0, 0, 0, 0, (width*2)+2, 0) #creates and prints to the description box that takes up the upper left side of the screen in char creation
-
-		
 
 	def choicebox(self):
 		width = (SCREEN_WIDTH*2)/3+1
@@ -154,8 +155,20 @@ class Ccreation:
 		if index >= 0 and index < len(requested_list): 
 			return requested_list[index] ### returns the name of the chosen class or race or whatever as per catalog list
 		return None
+
+
 		
-		#######################################################################
+class Player:
+	def __init__(self, race = 'human', gclass = 'warden', stats = {'strength':30,'constitution':5,'agility':5,'intelligence':5,'attunement':5}, skills = {'combat':0,'tech':0,'ritual':0}, perks = [],abilities = ['kicklaunch']):
+		self.race = race
+		self.gclass = gclass #gclass for game class
+		self.stats = stats
+		self.skills = skills
+		self.perks = perks
+		self.abilities = abilities
+
+
+
 
 class Equipment:
 	def __init__(self, slot, base_dmg = [0,0], armor_bonus = 0, dodge_bonus = 0):
@@ -164,19 +177,26 @@ class Equipment:
 		self.base_dmg = base_dmg
 		self.dodge_bonus = dodge_bonus
 		self.armor_bonus = armor_bonus
+		#additional possible attributes: 
+		#self.str_bonus
+		#
 
 	def equip(self,equipper):
 		#equip object and show a message about it
 		if equipper == 'player':
 			self.is_equipped = True
-			if (catalog.get_item_special(self) != [None, None, None]):
+			if (catalog.get_item_special(self) != {}):
 				self.apply_special()  # all unique weapon effects (defined in catalog) apply once equipped
+										#'applying' might mean giving a weapon an attribute or whatever
 			message('Equipped ' + self.owner.name + ' on your ' + self.slot + '.', libtcod.light_green)
 
 	def apply_special(self):
-		special_list = catalog.get_item_special(self) # special list is in the form [item_name, special_name, special_value(0 if not applicable)]
-		if special_list[1] == 'str bonus':
-			self.str_bonus = special_list[2]
+		special_dict = catalog.get_item_special(self) # special dict is in the form of a dictionary with {special_name: special_value} (0 if not applicable)
+		for special_name in special_dict:
+			if special_name == 'str bonus':
+				self.str_bonus = special_dict['str bonus']
+
+
 
 	def dequip(self):
 		if not self.is_equipped: return
@@ -200,6 +220,7 @@ class Equipment:
 		if self.base_dmg == [0,0]: return 0
 		else:
 			return libtcod.random_get_int(0, self.base_dmg[0], self.base_dmg[1])
+
 
 
 class Item:
@@ -251,9 +272,8 @@ class Item:
 
 
 
-
 class Fighter:
-	def __init__(self, hp, armor, dodge, power, xp,  death_function = None):
+	def __init__(self, hp, armor, dodge, power, xp,  death_function = None, state = 'normal'):
 		self.max_hp = hp
 		self.hp = hp
 		self.base_armor = armor
@@ -261,6 +281,8 @@ class Fighter:
 		self.base_power = power
 		self.death_function = death_function
 		self.xp = xp
+		self.state = state
+		#self.multipliers = [1]
 
 	def take_damage(self,damage):
 		if damage > 0:
@@ -272,7 +294,7 @@ class Fighter:
 					function(self.owner)
 
 	def attack(self, target):
-		damage = self.power - target.fighter.armor
+		damage = self.power() - target.fighter.armor
 		if damage > 0:
 			message(self.owner.name.capitalize() + ' attacks ' + target.name + ' for ' + str(damage) + ' hit points.')
 			target.fighter.take_damage(damage)
@@ -285,33 +307,30 @@ class Fighter:
 			self.hp = self.max_hp
 
 
-
-
-
-
-	@property
-	def power(self):
-		flat_bonus = 2
+	def get_multi_bonuses(self):
 		fighter_str_bonus = 0
-		weapon_str_bonus = 0
-		multiplier_component = [1]
+		items_rolled_dmg = 0
 
-		all_items_equipped = get_all_equipped(self.owner)
-		items_rolled_dmg = sum(equipment.roll_dmg() for equipment in all_items_equipped)
 		if self.owner is player:
-			for equip in all_items_equipped:
-				if catalog.get_item_special(equip)[1] == 'str bonus':
-					weapon_str_bonus = equip.str_bonus
-					break #also this break will be removed later #by convention, lets say only weapons can have a strength bonus
-				
-			fighter_str_bonus = int(round(self.owner.player.stats['strength'] * weapon_str_bonus))
-		else:
-			pass
-		
+			items_rolled_dmg = sum(equipment.roll_dmg() for equipment in get_all_equipped(self.owner))
+			for equip in get_all_equipped(self.owner):
+				if equip.str_bonus is not None: fighter_str_bonus = int(round(self.owner.player.stats['strength'] * equip.str_bonus))
+				break #also this break will be removed later #by convention, lets say only weapons can have a strength bonus
+
+		else: pass
+
 		multiplicative_component = items_rolled_dmg + fighter_str_bonus
+		return multiplicative_component
 
 
-		full_damage = (multiplicative_component * product(multiplier_component)) + flat_bonus #final damage formula after all modifiers and before defenses apply
+
+	def power(self, multipliers = [1], flat_bonus = [3]):
+
+
+		multiplicative_component = self.get_multi_bonuses()
+
+
+		full_damage = (multiplicative_component * product(multipliers)) + sum(flat_bonus) #final damage formula after all modifiers and before defenses apply
 		return full_damage																		
 
 	@property
@@ -331,10 +350,12 @@ class Fighter:
 	
 
 
-
-class DumbMonster:
+class DumbMonster:  # basic AI
 	def take_turn(self):
 		monster = self.owner
+		if monster.fighter.state == 'skip turn':
+			monster.state = 'normal'
+			return
 
 		if libtcod.map_is_in_fov(fov_map, monster.x, monster.y):
 			if monster.distance_to(player) >= 2:
@@ -342,6 +363,7 @@ class DumbMonster:
 
 			elif player.fighter.hp >= 0:
 				monster.fighter.attack(player)
+
 
 
 class Rect:
@@ -359,6 +381,8 @@ class Rect:
 	def intersect(self,other):
 		return (self.x1 <= other.x2 and self.x2 >= other.x1 and self.y1 <= self.y2 and self.y2 >= other.y1)
 
+
+
 class Tile:
 	def __init__(self, blocked, block_sight = None):
 		self.blocked = blocked
@@ -367,6 +391,8 @@ class Tile:
 		#blocks sight by default if blocks movement (standard wall)
 		if block_sight is None:	self.block_sight = blocked
 		
+
+
 class Object:
 	def __init__(self,x, y, char, name, color, blocks = False, fighter = None, ai = None, item = None, ignore_fov = False, equipment = None, player = None):
 		self.x = x
@@ -396,6 +422,27 @@ class Object:
 			self.ai.owner = self
 
 	def move(self, dx, dy):
+		if abs(dx) == abs(dy) and abs(dx) > 1:
+			for i in range(1,abs(dx)):
+				if not is_blocked(self.x + int(math.copysign(1, dx)), self.y + int(math.copysign(1, dy))): 
+					self.x += int(math.copysign(1, dx))
+					self.y += int(math.copysign(1, dy))
+				else: return
+			return
+
+		elif dx == 0 and abs(dy) > 1:
+			for i in range(1,abs(dy)):
+				if not is_blocked(self.x, self.y + int(math.copysign(1, dy))):
+					self.y += int(math.copysign(1, dy))
+				else: return
+			return
+
+		elif dy == 0 and abs(dx) > 1:
+			for i in range(1,abs(dx)):
+				if not is_blocked(self.x + int(math.copysign(1, dx)), self.y):
+					self.x += int(math.copysign(1, dx))
+					return
+
 		if not is_blocked(self.x+dx, self.y+dy):
 			self.x += dx
 			self.y += dy
@@ -443,15 +490,45 @@ class Object:
 		objects.remove(self)
 		objects.append(self)
 
+
+		############################################################################
+		#########################   ABILITY  DEFINITIONS(for player)   #############
+		############################################################################
+
+	def abl_kicklaunch(self):
+		target = random_adj_target()
+		xcomp = 0
+		ycomp = 0
+
+		if target == None:
+			message('Nobody to kick!')
+			return
+
+		if self.y < target.y:
+			ycomp = 3
+		elif self.y > target.y:
+			ycomp = -3
+
+		if self.x < target.x:
+			xcomp = 3
+		elif self.x > target.x:
+			xcomp = -3
+
+		dmg = self.fighter.power(multipliers = [0.5])
+
+		target.move(xcomp, ycomp)
+		target.fighter.take_damage(dmg)
+
+		message('You put all your strength behind a mighty kick, dealing ' + str(int(round(dmg))) + ' damage.', libtcod.light_red)
+
 def normal_randomize(mean,sd): #input mean, sd for gauss distribution
+
 	floatnormal = gauss(float(mean),float(sd)) #output one sample, rounded and non-negative
 	if floatnormal <= 1: return 1
 	return int(round(floatnormal))
 
-
-
-
 def main_menu():
+	global con
 
 	while not libtcod.console_is_window_closed():
 		#show options and wait for the player's choice
@@ -460,7 +537,7 @@ def main_menu():
 		if choice == 0:  #new game
 			initialize_player()
 			ccreation.run_creation()
-			clear_screen()
+			libtcod.console_clear(con)
 			new_game()
 			play_game()
 		if choice == 1:  #load last game
@@ -502,7 +579,6 @@ def load_game():
 	file.close()
 
 	initialize_fov()
-
 
 def play_game():
 	global key, mouse
@@ -559,7 +635,7 @@ def check_lvlup():
 			player.fighter.max_hp += 20
 			player.fighter.hp += 20
 		elif choice == 1:
-			player.fighter.power += 1
+			pass
 		elif choice == 2:
 			player.fighter.armor += 1
 
@@ -580,17 +656,14 @@ def get_all_equipped(obj):  #returns a list of equipped items
 		return []  #other objects have no equipment
 
 def next_level():
-	global dungeon_level
+	global dungeon_level, con
 	dungeon_level += 1
 	message('You descend further into the bowels of the earth.', libtcod.dark_violet)
 	make_map()
-	clear_screen()
+	libtcod.console_clear(con)
 
 	initialize_fov()
 	
-
-
-
 def handle_keys():
 	global key
 
@@ -645,7 +718,7 @@ def handle_keys():
 				if key.shift: # E (SHIFT E) prompts you to equip an item
 					chosen_equipment = action_equip_menu('Choose an item to equip:\n')
 					if chosen_equipment is None:
-						msgbox('You have no equippable items in your inventory.')
+						msgbox('Unable to equip.')
 					else:
 						chosen_equipment.equip('player')
 
@@ -657,12 +730,20 @@ def handle_keys():
 						msgbox('No item there! Press E to equip something.')
 					else:
 						chosen_item.equip_options()
+
+			elif key_char == 'z':
+				ability_choices = [ability for ability in player.player.abilities]
+				choice = menu('Press a key for an ability, or any other to cancel.', ability_choices, SCREEN_WIDTH/2)
+
+				if choice is not None:
+					if ability_choices[choice] == 'kicklaunch':
+						player.abl_kicklaunch()
 					
 
 
 			elif key_char == 'i':
 				#show the inventory
-				chosen_item = inventory_menu('Press the key next to an item to use it, or any other to cancel.\n')
+				chosen_item = inventory_menu('Press the key next to an item for more options, or any other to cancel.\n')
 				if chosen_item is not None:
 					chosen_item.item_options()
 
@@ -671,9 +752,6 @@ def handle_keys():
 				chosen_item = inventory_menu('Press the key next to an item to drop it, or any other to cancel.\n')
 				if chosen_item is not None:
 					chosen_item.drop()
-
-			elif key_char == 'l':
-				clear_screen()
 
 			elif key_char == '.':
 				if player.x == stairs.x and player.y == stairs.y:
@@ -698,10 +776,6 @@ def make_map():
 		for y in range(MAP_HEIGHT)]
 			for x in range(MAP_WIDTH)]
 
-
-
-
-
 	rooms = []
 	objects = [player]
 	num_rooms = 0
@@ -721,12 +795,9 @@ def make_map():
 				break
 
 		if not failed:
-
 			create_room(new_room)
 			place_objects(new_room)
 			(new_x,new_y) = new_room.center()
-			
-			
 
 			if num_rooms == 0:
 				player.x = new_x
@@ -734,7 +805,6 @@ def make_map():
 
 			else:
 				(prev_x,prev_y) = rooms[num_rooms-1].center()
-
 				if libtcod.random_get_int(0,0,1) == 1:
 					create_h_tunnel(prev_x, new_x, prev_y)
 					create_v_tunnel(prev_y, new_y, new_x)
@@ -754,11 +824,17 @@ def create_item_rngtable(depth_level = 1): # this gonna get modified to shit bef
 	output_items = []					# returns list of (OBJECT)items to spawn in a dungeon level by calling get_random_item on a normal distribution of depthlevels
 	mean_items = 7 + depth_level  * 3
 
+	maxdepth = 1
+	for iobj in get_full_item_list():
+		if iobj.item.depth_level > maxdepth: maxdepth = iobj.item.depth_level
+
 	number_of_items = normal_randomize(mean_items, mean_items * 0.5) # chooses number of items to be created in a given dungeonlvl
 	if number_of_items <= 5: number_of_items = 5
 	for index in range(number_of_items):
 		item_depthlevel = normal_randomize(depth_level, 0.5 ** depth_level) # for each item, chooses a depth level in a gauss curve
-		if item_depthlevel > 2: item_depthlevel = 2 # temporary max cap: should be exactly as high as the highest itemlevel possible
+
+		if item_depthlevel > maxdepth: item_depthlevel = maxdepth
+
 		randomized_item = get_random_item_of_depthlevel(item_depthlevel) 
 		output_items.append(randomized_item)
 
@@ -771,8 +847,6 @@ def get_items_of_depthlevel(desired_depth = 1):
 		if item_obj.item.depth_level == desired_depth:
 			depth_items.append(item_obj)
 	return depth_items
-
-
 
 def get_random_item_of_depthlevel(desired_depth = 1):
 	itemlist = get_items_of_depthlevel(desired_depth)
@@ -797,16 +871,12 @@ def place_items_in_level():
 			objects.append(items_to_place[i])
 			i += 1
 
-
 def get_full_item_list():
 	itemlist = []
 	for itemname in catalog.FULL_INAMELIST:
 		item_obj = generate_item(itemname,0,0)
 		itemlist.append(item_obj)
 	return itemlist
-
-
-
 
 def render_all():
 	global fov_map, color_dark_wall, color_light_wall
@@ -865,22 +935,13 @@ def clear_screen():
 		for x in range(SCREEN_WIDTH):
 			libtcod.console_put_char_ex(con, x, y, ' ', color_dark_wall, libtcod.black)
 			libtcod.console_blit(clearer,0,0,0,0,0,0,0)
+
 def create_room(room):
 	global map
 	for x in range(room.x1+1,room.x2):
 		for y in range(room.y1+1,room.y2):
 			map[x][y].blocked = False
 			map[x][y].block_sight = False
-
-# def roll_nds(n,s):	# as in roll n d4, n d6, etc
-# 	result_list = []
-# 	for i in n:
-# 		result_list.append(libtcod.random_get_int(0, 1, s))
-
-# 	return result_list
-
-
-
 
 def random_choice_index(chances):  #choose one option from list of chances, returning its index
 	#the dice will land on some number between 1 and the sum of the chances
@@ -919,18 +980,18 @@ def create_v_tunnel(y1,y2,x):
 		map[x][y].block_sight = False
 
 def generate_item(name, x, y): #RETURNS HIGHEST OBJECT, NOT ITEM OR EQUIP COMPONENT
-	if name == 'healing salve':
+	if name == 'healing salve':  #only basic stats go here, for special functions and descriptions go to catalog
 		item_component = Item(weight = 0.5, depth_level = 1, use_function = pot_heal)
 		item = Object(x, y, '!', 'healing salve', libtcod.violet, None, None, None, item = item_component)
 	elif name == 'pipe gun':
 		item_component = Item(weight = 1, depth_level = 2, use_function = consumable_pipegun)
-		item = Object(x ,y, '?', 'pipe gun', libtcod.light_blue, None, None, None, item = item_component)
+		item = Object(x, y, '?', 'pipe gun', libtcod.light_blue, None, None, None, item = item_component)
 	elif name == 'crude grenade':
 		item_component = Item(weight = 1, depth_level = 2, use_function = consumable_crudenade)
 		item = Object(x, y, '?', 'crude grenade', libtcod.dark_red, None, None, None, item = item_component)
 	elif name == 'scrap metal sword':
 		item_component = Item(weight = 10, depth_level = 1)
-		equipment_component = Equipment(slot='right hand', base_dmg = (2,3))
+		equipment_component = Equipment(slot='right hand', base_dmg = [2,6])
 		item = Object(x, y, '/', 'scrap metal sword', libtcod.desaturated_blue, item = item_component, equipment=equipment_component)
 
 	return item
@@ -946,10 +1007,6 @@ def generate_monster(name, x, y):
 		monster = Object(x, y, 'r', 'nasty rat', libtcod.red, blocks = True, fighter = fighter_component, ai = ai_component)
 
 	return monster
-
-
-
-
 
 def place_objects(room):
 	num_monsters = libtcod.random_get_int(0,0,MAX_ROOM_MONSTERS)
@@ -968,10 +1025,6 @@ def place_objects(room):
 
 	x = libtcod.random_get_int(0, room.x1+1, room.x2-1)
 	y = libtcod.random_get_int(0, room.y1+1, room.y2-1)
-
-
-	# objects.append(item)
-	# item.send_to_back()
 
 def is_blocked(x,y):
 	if map[x][y].blocked:
@@ -1050,8 +1103,6 @@ def message(new_msg, color = libtcod.white):
 
 		game_msgs.append( (line, color) )
 
-
-
 def initialize_fov():
 	global fov_recompute, fov_map
 	fov_recompute = True
@@ -1091,31 +1142,27 @@ def action_equip_menu(header):
 	else:
 		index = menu(header, options, INVENTORY_WIDTH)
 
+	if index is None: return None
 	return output_item[index].equipment
 
 def equipment_menu(header):
 	options = []
 	outputitem = []
 	check = False
-	for slot in catalog.SLOTLIST:
+	for slot in catalog.SLOTLIST: #Loops through objects for equipped item in a slot, returning 'empty' if there is none
 		equipment = get_equipped_in_slot(slot)
 		if equipment == None:
 			outputitem.append('empty')
 			options.append(slot + ':     - ')
 		else:
-			outputitem.append(equipment)# RETURNS EQUIPMENT COMPONENT INSTANCE
-			options.append(slot + ':    ' + equipment.owner.name)
+			outputitem.append(equipment)
+			options.append(slot + ':    ' + equipment.owner.name)	
 
-
-
-#Loops through objects for equipped item in a slot, returning 'empty' if there is none
-				
 	index = menu(header, options, INVENTORY_WIDTH)
 
 	if index is None: return None
 	elif outputitem[index] == 'empty': return 'empty'
-	elif outputitem[index] != 'empty': return outputitem[index]
-
+	elif outputitem[index] != 'empty': return outputitem[index] # RETURNS EQUIPMENT COMPONENT INSTANCE
 
 def textbox(lines): # takes text as a list of (str)lines and displays it
 	width = 0
@@ -1126,9 +1173,6 @@ def textbox(lines): # takes text as a list of (str)lines and displays it
 	width += 6
 	height = len(lines) + 4
 	window = libtcod.console_new(width, height)
-
-
-	# libtcod.console_print_rect_ex(window,0,0, width, height, libtcod.BKGND_NONE, libtcod.LEFT)
 
 	y = 2
 	for line in lines:
@@ -1141,9 +1185,9 @@ def textbox(lines): # takes text as a list of (str)lines and displays it
 	libtcod.console_blit(window,0,0,width,height,0,x,y,1.0,1.0)
 	libtcod.console_flush()
 	ignore = libtcod.console_wait_for_keypress(True)
-
-
-
+	libtcod.console_clear(window)
+	libtcod.console_blit(window,0,0,width,height,0,x,y,1.0,1.0)
+	
 
 def menu(header, options, width):
 	if len(options) > 26: raise ValueError('Cannot have a menu with more than 26 options.')
@@ -1174,8 +1218,10 @@ def menu(header, options, width):
 
 	index = key.c - ord('a')
 	if index >= 0 and index < len(options): 
+		libtcod.console_clear(window)
 		return index
 	return None
+
 
 def msgbox(message, width=50):
 	menu(message, [], width)
@@ -1254,6 +1300,20 @@ def closest_monster(max_range):
 				closest_enemy = object
 				closest_dist = dist
 	return closest_enemy
+
+def random_adj_target():
+	adjacents = []
+	for object in objects:
+		if object.distance_to(player) < 2 and object.fighter and not object == player: adjacents.append(object)
+
+	if adjacents == []: 
+		return None
+	else: 
+		choice = libtcod.random_get_int(0,0,len(adjacents)-1)
+
+	return adjacents[choice]
+
+
  
 def target_monster(max_range=None):
 	#returns a clicked monster inside FOV up to a range, or None if right-clicked
@@ -1278,10 +1338,8 @@ def clear_game():
 
 	clear_screen()
 
-
 def new_game():
 	global player, game_msgs, game_state, inventory, dungeon_level
-	
 	
 	dungeon_level = 1
 	make_map()
@@ -1292,11 +1350,6 @@ def new_game():
 
 	#create the list of game messages and their colors, starts empty
 	game_msgs = []
-
-
-
-
-
 
 def pot_heal():
 	if player.fighter.hp == player.fighter.max_hp:

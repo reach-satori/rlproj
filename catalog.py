@@ -63,7 +63,7 @@ def get_item_description(itemname):
 				'Metal spurs protrude from the dull blade and veins of rust run across it.',
 				"Barely usable as a weapon, but still better than your fists. Just don't cut yourself.",
 				'',
-				'Damage roll: 2-3',
+				'Damage roll: 2-6',
 				'Strength bonus: 30%%']
 
 	elif itemname == 'crude grenade':
@@ -80,14 +80,19 @@ def get_item_description(itemname):
 
 	return description
 
-def get_item_special(item):
+def get_item_special(item): #take item's object and returns dictionary with {'special_name':special_value} (special value is 0 if not applicable)
+	specialdict = {}
 	if item.owner.name == 'scrap metal sword':
-		special = 'str bonus'
-		value = 0.3
-
-	else: return [None, None, None]
-
-	return [item.owner.name, special, value]
+		specialdict['str bonus'] = 0.3 
+	
+	#to clarify how specials work, since it's a mess and i don't know how to make it better:
+	#whenever an item gets equipped, it checks this spot and gets a property added in the apply_special method(called inside equip)
+	#which is in turn used for whatever purpose wherever it's needed by way of me manually adding it
+	#it's gonna be really horrible and give me a headache i'me sure, but i'm new at programmin and don't know how else to do it
+	#I suppose I could make categories for specials, but that's a little restricting and I'm gonna have to open it up again
+	#when I want to make an item do something unique anyway so
+	
+	return specialdict
 
 
 
