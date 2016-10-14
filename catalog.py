@@ -29,25 +29,25 @@ FULL_GCLASSLIST = ['warden',
 				'placeholder1',
 				'placeholder2']
 
-combattable = [
 
-					]
 
 class SkillNode(object):
-	def __init__(self, name, level, leveled, abilities, description):
+	def __init__(self, name, level, leveled, abilities, description, parent):
 		self.name = name
 		self.level = level
 		self.leveled = leveled
 		self.name = name
 		self.abilities = abilities
 		self.description = description
+		self.parent = parent
+
+
 
 def get_nodetable(treename):
 	if treename == 'combat':
 		nodetable = [
-
-		SkillNode(name = 'basic training', level = 1, leveled = False, abilities = ['kicklaunch'], description = node_description('basic training')),
-		SkillNode(name = 'heavy blades', level = 2, leveled = False, abilities = [], description = node_description('heavy blades'))
+		SkillNode(name = 'basic training', level = 1, leveled = False, abilities = ['kicklaunch'], description = node_description('basic training'), parent = []),
+		SkillNode(name = 'heavy blades', level = 2, leveled = False, abilities = [],               description = node_description('heavy blades'),   parent = ['basic training'])
 		]
 	elif treename == 'tech':
 		nodetable = []
@@ -58,10 +58,10 @@ def get_nodetable(treename):
 	return nodetable
 
 def node_description(node):
-	if node == 'kicklaunch':
+	if node == 'heavy blade':
 		return ["KICKS THEIR ASS FOR 3 TILES PLACEHOLDER PLACEHOLDER"]
 	if node == 'basic training':
-		return['placeholder placeholder']
+		return['placeholder placeholder placeholder placeholder']
 
 
 

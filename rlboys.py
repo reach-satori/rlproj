@@ -66,11 +66,40 @@ class SkillTree:
 		self.level = level
 		self.nodetable = catalog.get_nodetable(stype)
 
+	def get_node_from_name(self, name):
+		for node in self.nodetable:
+			if node.name == name: return node
+		else: raise ValueError('Skill list node that does not exist requested!')
+
+	def get_available_nodes(self):
+		available_nodes = []
+		for node in self.nodetable:
+			if node.parent == [] or node.parent == '' or self.check_if_node_leveled(node.parent): 
+				available_nodes.append(node)
+		if available_nodes == []: raise ValueError('No available nodes to level.')
+		else: return available_nodes
+
+	def check_if_node_leveled(self, node_s):
+		if type(node_s) is list:
+			for name in node_s:
+				chknode = self.get_node_from_name(name)
+				if not chknode.leveled: return False
+			return True
+
+		elif type(node_s) is str:
+			if not self.get_node_from_name(node_s): return False
+			else: return True
+
+
+#SKILL TREE DATA STRUCTURE:
+#One SkillTree object for each type (combat, tech, ritual), each containing appropriate nodetable objects gotten from the catalog
+#abilities are passed on to the player in the Player's abilities property whenever they are called (getter decorator)
+#haven't done passive bonuses yet
 
 
 class Ccreation:
 
-	def __init__(self,stage = 'race select', chosenrace = 'empty', chosengclass = 'empty', chosenperk = 'empty'):
+	def __init__(self, stage = 'race select', chosenrace = 'empty', chosengclass = 'empty', chosenperk = 'empty'):
 		self.stage = stage
 		self.chosenrace = chosenrace
 		self.chosengclass = chosengclass
@@ -88,9 +117,9 @@ class Ccreation:
 				self.statbox(self.chosengclass)
 				self.chosengclass = self.choicebox()
 
-		ctree = SkillTree('combat',1)
-		ttree = SkillTree('tech',0)
-		rtree = SkillTree('ritual',0)
+		ctree = SkillTree('combat', 1)
+		ttree = SkillTree('tech', 0)
+		rtree = SkillTree('ritual', 0)
 
 		clear_screen()
 		#return Player(self.chosenrace, self.chosengclass,)
@@ -351,15 +380,17 @@ class Fighter:
 
 
 
-	def power(self, multipliers = [1], flat_bonus = 3):
-		combat_flatbonus = ctree.level * 2
-		if self.owner is player: flat_bonus += combat_flatbonus
+	def power(self, multipliers = [1], flat_bonus = 1):
+		if self.owner is player: 
+			combat_flatbonus = ctree.level * 2
+			flat_bonus += combat_flatbonus
+			multiplicative_component = self.get_multi_bonuses()
+			full_damage = (multiplicative_component * product(multipliers)) + flat_bonus #final damage formula after all modifiers and before defenses apply
+			return full_damage	
 
-		multiplicative_component = self.get_multi_bonuses()
+		else: return self.base_power
 
-
-		full_damage = (multiplicative_component * product(multipliers)) + flat_bonus #final damage formula after all modifiers and before defenses apply
-		return full_damage																		
+																			
 
 	@property
 	def armor(self):  #return actual defense, by summing up the bonuses from all equipped items
