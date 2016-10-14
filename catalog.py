@@ -29,9 +29,39 @@ FULL_GCLASSLIST = ['warden',
 				'placeholder1',
 				'placeholder2']
 
+combattable = [
 
+					]
 
+class SkillNode(object):
+	def __init__(self, name, level, leveled, abilities, description):
+		self.name = name
+		self.level = level
+		self.leveled = leveled
+		self.name = name
+		self.abilities = abilities
+		self.description = description
 
+def get_nodetable(treename):
+	if treename == 'combat':
+		nodetable = [
+
+		SkillNode(name = 'basic training', level = 1, leveled = False, abilities = ['kicklaunch'], description = node_description('basic training')),
+		SkillNode(name = 'heavy blades', level = 2, leveled = False, abilities = [], description = node_description('heavy blades'))
+		]
+	elif treename == 'tech':
+		nodetable = []
+
+	elif treename == 'ritual':
+		nodetable = []
+
+	return nodetable
+
+def node_description(node):
+	if node == 'kicklaunch':
+		return ["KICKS THEIR ASS FOR 3 TILES PLACEHOLDER PLACEHOLDER"]
+	if node == 'basic training':
+		return['placeholder placeholder']
 
 
 
@@ -83,7 +113,8 @@ def get_item_description(itemname):
 def get_item_special(item): #take item's object and returns dictionary with {'special_name':special_value} (special value is 0 if not applicable)
 	specialdict = {}
 	if item.owner.name == 'scrap metal sword':
-		specialdict['str bonus'] = 0.3 
+		specialdict['str bonus'] = 0.3  # gives item a .str_bonus attribute on equip, which then gets checked at attack in the power property of the fighter
+	
 	
 	#to clarify how specials work, since it's a mess and i don't know how to make it better:
 	#whenever an item gets equipped, it checks this spot and gets a property added in the apply_special method(called inside equip)
@@ -91,8 +122,11 @@ def get_item_special(item): #take item's object and returns dictionary with {'sp
 	#it's gonna be really horrible and give me a headache i'me sure, but i'm new at programmin and don't know how else to do it
 	#I suppose I could make categories for specials, but that's a little restricting and I'm gonna have to open it up again
 	#when I want to make an item do something unique anyway so
+
+	#at least i can catalogue here exactly what each special does and where the code is
 	
 	return specialdict
 
 
 
+	

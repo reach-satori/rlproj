@@ -56,10 +56,15 @@ color_light_ground = libtcod.Color(200, 180, 50)
 
 
 
+
+
+
+
 class SkillTree:
-	def __init__(self, ctype, level):
-		self.ctype = ctype
+	def __init__(self, stype, level = 0):
+		self.stype = stype
 		self.level = level
+		self.nodetable = catalog.get_nodetable(stype)
 
 
 
@@ -72,7 +77,7 @@ class Ccreation:
 		self.chosenperk = chosenperk
 
 	def run_creation(self):
-		global ctree, ttree, rtree #player
+		global ctree, ttree, rtree 
 		while self.stage != 'complete':
 			if self.stage == 'race select':
 				self.descriptionbox(self.chosenrace) 
@@ -83,7 +88,7 @@ class Ccreation:
 				self.statbox(self.chosengclass)
 				self.chosengclass = self.choicebox()
 
-		ctree = SkillTree('combat',0)
+		ctree = SkillTree('combat',1)
 		ttree = SkillTree('tech',0)
 		rtree = SkillTree('ritual',0)
 
@@ -158,14 +163,36 @@ class Ccreation:
 
 
 		
-class Player:
-	def __init__(self, race = 'human', gclass = 'warden', stats = {'strength':30,'constitution':5,'agility':5,'intelligence':5,'attunement':5}, skills = {'combat':0,'tech':0,'ritual':0}, perks = [],abilities = ['kicklaunch']):
+class Player(object):
+	def __init__(self, race = 'human', gclass = 'warden', stats = {'strength':30,'constitution':5,'agility':5,'intelligence':5,'attunement':5}, skills = {'combat':0,'tech':0,'ritual':0}, perks = []):
 		self.race = race
 		self.gclass = gclass #gclass for game class
 		self.stats = stats
 		self.skills = skills
 		self.perks = perks
-		self.abilities = abilities
+
+
+	@property
+	def abilities(self):
+		abilitylist = []
+		for tree in (ctree, ttree, rtree):
+			for i in range(1,tree.level+1):
+					for node in tree.nodetable:
+						if node.level == i and node.abilities != None:# and node.leveled:
+							abilitylist += node.abilities
+		self._abilities = abilitylist
+		return self._abilities
+
+	@abilities.setter
+	def abilities(self):
+		return self.abilities
+
+		
+
+
+
+
+	
 
 
 
@@ -198,7 +225,7 @@ class Equipment:
 
 
 
-	def dequip(self):
+	def unequip(self):
 		if not self.is_equipped: return
 		self.is_equipped = False
 		message('Unequipped ' + self.owner.name + ' from ' + self.slot + '.', libtcod.light_yellow)
@@ -282,7 +309,7 @@ class Fighter:
 		self.death_function = death_function
 		self.xp = xp
 		self.state = state
-		#self.multipliers = [1]
+
 
 	def take_damage(self,damage):
 		if damage > 0:
@@ -324,13 +351,14 @@ class Fighter:
 
 
 
-	def power(self, multipliers = [1], flat_bonus = [3]):
-
+	def power(self, multipliers = [1], flat_bonus = 3):
+		combat_flatbonus = ctree.level * 2
+		if self.owner is player: flat_bonus += combat_flatbonus
 
 		multiplicative_component = self.get_multi_bonuses()
 
 
-		full_damage = (multiplicative_component * product(multipliers)) + sum(flat_bonus) #final damage formula after all modifiers and before defenses apply
+		full_damage = (multiplicative_component * product(multipliers)) + flat_bonus #final damage formula after all modifiers and before defenses apply
 		return full_damage																		
 
 	@property
@@ -422,27 +450,6 @@ class Object:
 			self.ai.owner = self
 
 	def move(self, dx, dy):
-		if abs(dx) == abs(dy) and abs(dx) > 1:
-			for i in range(1,abs(dx)):
-				if not is_blocked(self.x + int(math.copysign(1, dx)), self.y + int(math.copysign(1, dy))): 
-					self.x += int(math.copysign(1, dx))
-					self.y += int(math.copysign(1, dy))
-				else: return
-			return
-
-		elif dx == 0 and abs(dy) > 1:
-			for i in range(1,abs(dy)):
-				if not is_blocked(self.x, self.y + int(math.copysign(1, dy))):
-					self.y += int(math.copysign(1, dy))
-				else: return
-			return
-
-		elif dy == 0 and abs(dx) > 1:
-			for i in range(1,abs(dx)):
-				if not is_blocked(self.x + int(math.copysign(1, dx)), self.y):
-					self.x += int(math.copysign(1, dx))
-					return
-
 		if not is_blocked(self.x+dx, self.y+dy):
 			self.x += dx
 			self.y += dy
@@ -497,29 +504,58 @@ class Object:
 
 	def abl_kicklaunch(self):
 		target = random_adj_target()
-		xcomp = 0
-		ycomp = 0
+
+		dx = 0
+		dy = 0
 
 		if target == None:
 			message('Nobody to kick!')
 			return
 
 		if self.y < target.y:
-			ycomp = 3
+			dy = 3
 		elif self.y > target.y:
-			ycomp = -3
+			dy = -3
 
 		if self.x < target.x:
-			xcomp = 3
+			dx = 3
 		elif self.x > target.x:
-			xcomp = -3
+			dx = -3
 
 		dmg = self.fighter.power(multipliers = [0.5])
-
-		target.move(xcomp, ycomp)
 		target.fighter.take_damage(dmg)
-
 		message('You put all your strength behind a mighty kick, dealing ' + str(int(round(dmg))) + ' damage.', libtcod.light_red)
+		##########################################################################################
+		##########moves object (dx, dy) units, stopping and displaying a slam message if they hit something
+		if abs(dx) == abs(dy) and abs(dx) > 1:
+			for i in range(1,abs(max(dx,dy))):
+				if not is_blocked(target.x + int(math.copysign(1, dx)), target.y + int(math.copysign(1, dy))): 
+					target.x += int(math.copysign(1, dx))
+					target.y += int(math.copysign(1, dy))
+				else: 
+					message('The ' + target.name + ' slams into something violently!')
+					return
+
+		elif dx == 0 and abs(dy) > 1:
+			for i in range(1,abs(dy)):
+				if not is_blocked(target.x, target.y + int(math.copysign(1, dy))):
+					target.y += int(math.copysign(1, dy))
+				else:
+					message('The ' + target.name + ' slams into something violently!')
+					return
+			
+
+		elif dy == 0 and abs(dx) > 1:
+			for i in range(1,abs(dx)):
+				if not is_blocked(target.x + int(math.copysign(1, dx)), target.y):
+					target.x += int(math.copysign(1, dx))
+				else:
+					message('The ' + target.name + ' slams into something violently!')
+					return
+
+		#####################
+		
+		
 
 def normal_randomize(mean,sd): #input mean, sd for gauss distribution
 
@@ -535,8 +571,8 @@ def main_menu():
 		choice = menu('', ['Play a new game', 'Continue last game', 'Quit'], 24)
 
 		if choice == 0:  #new game
-			initialize_player()
 			ccreation.run_creation()
+			initialize_player()
 			libtcod.console_clear(con)
 			new_game()
 			play_game()
@@ -998,11 +1034,11 @@ def generate_item(name, x, y): #RETURNS HIGHEST OBJECT, NOT ITEM OR EQUIP COMPON
 
 def generate_monster(name, x, y):
 	if name == 'rat':
-		fighter_component = Fighter(hp = 10, armor = 0, dodge = 2, power = 3, xp = 10, death_function = monster_death)
+		fighter_component = Fighter(hp = 10, armor = 0, dodge = 0, power = 3, xp = 10, death_function = monster_death)
 		ai_component = DumbMonster()
 		monster = Object(x, y, 'r', 'rat', libtcod.desaturated_green, blocks = True, fighter = fighter_component, ai = ai_component)
 	elif name == 'nasty rat':
-		fighter_component = Fighter(hp = 15, armor = 1, dodge = 2, power = 4, xp = 25, death_function = monster_death)
+		fighter_component = Fighter(hp = 15, armor = 1, dodge = 0, power = 4, xp = 25, death_function = monster_death)
 		ai_component = DumbMonster()
 		monster = Object(x, y, 'r', 'nasty rat', libtcod.red, blocks = True, fighter = fighter_component, ai = ai_component)
 
@@ -1185,6 +1221,7 @@ def textbox(lines): # takes text as a list of (str)lines and displays it
 	libtcod.console_blit(window,0,0,width,height,0,x,y,1.0,1.0)
 	libtcod.console_flush()
 	ignore = libtcod.console_wait_for_keypress(True)
+
 	libtcod.console_clear(window)
 	libtcod.console_blit(window,0,0,width,height,0,x,y,1.0,1.0)
 	
@@ -1351,6 +1388,8 @@ def new_game():
 	#create the list of game messages and their colors, starts empty
 	game_msgs = []
 
+	
+
 def pot_heal():
 	if player.fighter.hp == player.fighter.max_hp:
 		message('You are at full health already!')
@@ -1380,7 +1419,7 @@ def consumable_crudenade():
 
 
 
-libtcod.console_set_custom_font('terminal8x12_gs_tc.png', libtcod.FONT_TYPE_GREYSCALE | libtcod.FONT_LAYOUT_TCOD)
+libtcod.console_set_custom_font('terminal10x16_gs_tc.png', libtcod.FONT_TYPE_GREYSCALE | libtcod.FONT_LAYOUT_TCOD)
 libtcod.console_init_root(SCREEN_WIDTH, SCREEN_HEIGHT, 'python/libtcod tutorial', False)
 libtcod.sys_set_fps(LIMIT_FPS)
 con = libtcod.console_new(MAP_WIDTH, MAP_HEIGHT)
