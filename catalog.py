@@ -17,7 +17,7 @@ FULL_INAMELIST = ['healing salve',
 				'crude grenade']
 
 FULL_RACELIST = ['human',
-				'placeholder1',
+				'anime catgirl',
 				'placeholder2',
 				'placeholder',
 				'placeholder',
@@ -32,9 +32,9 @@ FULL_GCLASSLIST = ['warden',
 
 
 class SkillNode(object):
-	def __init__(self, name, level, leveled, abilities, description, parent):
+	def __init__(self, name, tier, leveled, abilities, description, parent):
 		self.name = name
-		self.level = level
+		self.tier = tier
 		self.leveled = leveled
 		self.name = name
 		self.abilities = abilities
@@ -43,11 +43,12 @@ class SkillNode(object):
 
 
 
+
 def get_nodetable(treename):
 	if treename == 'combat':
 		nodetable = [
-		SkillNode(name = 'basic training', level = 1, leveled = False, abilities = ['kicklaunch'], description = node_description('basic training'), parent = []),
-		SkillNode(name = 'heavy blades', level = 2, leveled = False, abilities = [],               description = node_description('heavy blades'),   parent = ['basic training'])
+		SkillNode(name = 'basic training', tier = 1, leveled = True, abilities = ['kicklaunch'], description = get_node_description('basic training'), parent = []),
+		SkillNode(name = 'heavy blades', tier = 2, leveled = False, abilities = [],               description = get_node_description('heavy blades'),   parent = ['basic training'])
 		]
 	elif treename == 'tech':
 		nodetable = []
@@ -57,11 +58,11 @@ def get_nodetable(treename):
 
 	return nodetable
 
-def node_description(node):
-	if node == 'heavy blade':
-		return ["KICKS THEIR ASS FOR 3 TILES PLACEHOLDER PLACEHOLDER"]
+def get_node_description(node):
+	if node == 'heavy blades':
+		return ["KICKS THEIR WITH BIG METAL STICK PLACEHOLDER PLACEHOLDER", 'test test test']
 	if node == 'basic training':
-		return['placeholder placeholder placeholder placeholder']
+		return['you can kill people better with your hands', 'test test test test']
 
 
 
@@ -73,6 +74,8 @@ def ccreation_description(choice):
 		description = 'A race that once thrived, now driven to the brink of slow destruction. Mostly content to be farmers and traders, although some rare enterprising souls take the sword and venture out. placeholder placeholder placeholder placeholder'
 	elif choice == 'warden':
 		description = 'generic warrior barbarian, at least until i think about the lore a wee bit lads'
+	elif choice == 'anime catgirl':
+		description = 'kyaa kawaii nyan'
 	return description
 
 def ccreation_stats(choice):
@@ -82,6 +85,8 @@ def ccreation_stats(choice):
 		stats = ['this is the human statblock', 'it comes as strings in a list','because i dont know how to format it nicely using onlylibtcod','have you seen this console shit', 'seriously, this is bullshit']
 	elif choice == 'warden':
 		stats = ['more to combat','more to strength', 'more to constitution', 'decent starting weapons']
+	elif choice == 'anime catgirl':
+		stats = ['we','are', 'here', 'for', 'test', 'purposes']
 
 	return stats
 

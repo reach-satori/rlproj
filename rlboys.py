@@ -3,6 +3,7 @@ import math
 import textwrap
 import shelve
 import catalog
+import graphical
 from random import gauss
 
 
@@ -74,12 +75,13 @@ class SkillTree:
 	def get_available_nodes(self):
 		available_nodes = []
 		for node in self.nodetable:
-			if node.parent == [] or node.parent == '' or self.check_if_node_leveled(node.parent): 
+			if (node.parent == [] or node.parent == '' or self.check_if_node_leveled(node.parent)) and node.leveled == False: 
 				available_nodes.append(node)
 		if available_nodes == []: raise ValueError('No available nodes to level.')
 		else: return available_nodes
 
 	def check_if_node_leveled(self, node_s):
+
 		if type(node_s) is list:
 			for name in node_s:
 				chknode = self.get_node_from_name(name)
@@ -90,11 +92,59 @@ class SkillTree:
 			if not self.get_node_from_name(node_s): return False
 			else: return True
 
+	def node_select(self):
+		width = SCREEN_WIDTH
+		height = SCREEN_HEIGHT
+		ended = False
+
+		skillbox = libtcod.console_new(width, height)
+		options = self.get_available_nodes()
+		letter_index = ord('a')
+		y=2
+		libtcod.console_print_frame(skillbox,0, 0, width, height, clear=False, flag=libtcod.BKGND_DEFAULT)
+
+		for node in options:
+			text = ' ' + chr(letter_index) +'  -  ' + node.name
+			libtcod.console_print_ex(skillbox, 2, y, libtcod.BKGND_NONE, libtcod.LEFT, text)
+
+			y += 2
+			letter_index += 1
+		libtcod.console_blit(skillbox,0,0,0,0,0,0,0)
+		libtcod.console_flush()
+
+		while True:
+
+			key = libtcod.console_wait_for_keypress(True)
+			if key.vk == libtcod.KEY_ENTER and choice != None:
+				choice.leveled = True
+				return
+			elif key.vk == libtcod.KEY_ESCAPE:
+				return
+			index = key.c - ord('a')
+			choice = options[index]
+			self.node_description(choice)
+			libtcod.console_flush()
+
+		
+	def node_description(self, node):
+		width = SCREEN_WIDTH -6
+		height = SCREEN_HEIGHT/2 -2
+
+		skillcon = libtcod.console_new(width, height)
+		libtcod.console_print_frame(skillcon,0, 0, width, height, clear=False, flag=libtcod.BKGND_DEFAULT)
+		description = catalog.get_node_description(node.name) ## 
+		for line in description:
+			libtcod.console_print_ex(skillcon, 1, description.index(line)+1,libtcod.BKGND_NONE, libtcod.LEFT, line)
+		libtcod.console_print_ex(skillcon, 1, 60, libtcod.BKGND_NONE, libtcod.LEFT, 'Press enter to accept selection')
+
+		libtcod.console_blit(skillcon, 0, 0, 0, 0, 0, 2, height + 2) 
+
 
 #SKILL TREE DATA STRUCTURE:
 #One SkillTree object for each type (combat, tech, ritual), each containing appropriate nodetable objects gotten from the catalog
 #abilities are passed on to the player in the Player's abilities property whenever they are called (getter decorator)
 #haven't done passive bonuses yet
+
 
 
 class Ccreation:
@@ -107,6 +157,10 @@ class Ccreation:
 
 	def run_creation(self):
 		global ctree, ttree, rtree 
+		ctree = SkillTree('combat', 1)
+		ttree = SkillTree('tech', 0)
+		rtree = SkillTree('ritual', 0)
+
 		while self.stage != 'complete':
 			if self.stage == 'race select':
 				self.descriptionbox(self.chosenrace) 
@@ -116,10 +170,12 @@ class Ccreation:
 				self.descriptionbox(self.chosengclass)
 				self.statbox(self.chosengclass)
 				self.chosengclass = self.choicebox()
+			elif self.stage == 'skill select':
+				ctree.node_select()
+				self.stage = 'complete'
 
-		ctree = SkillTree('combat', 1)
-		ttree = SkillTree('tech', 0)
-		rtree = SkillTree('ritual', 0)
+
+
 
 		clear_screen()
 		#return Player(self.chosenrace, self.chosengclass,)
@@ -130,7 +186,7 @@ class Ccreation:
 
 		statsbox = libtcod.console_new(width, height)
 		libtcod.console_print_frame(statsbox,0, 0, width, height, clear=False, flag=libtcod.BKGND_DEFAULT)
-		statblock = catalog.ccreation_stats(choice) ## text for the statblock, comes in a list of strings because fuck everything
+		statblock = catalog.ccreation_stats(choice) ## text for the statblock, comes in a list of strings
 		for line in statblock:
 			libtcod.console_print_ex(statsbox, 1, statblock.index(line)+1,libtcod.BKGND_NONE, libtcod.LEFT, line)
 		libtcod.console_print_ex(statsbox, 1, 60, libtcod.BKGND_NONE, libtcod.LEFT, 'Press enter to accept selection')
@@ -182,7 +238,7 @@ class Ccreation:
 			return self.chosenrace
 
 		elif key.vk == libtcod.KEY_ENTER and self.stage == 'class select':
-			self.stage = 'complete'
+			self.stage = 'skill select'
 			return self.chosengclass
 
 		index = key.c - ord('a')
@@ -193,13 +249,12 @@ class Ccreation:
 
 		
 class Player(object):
-	def __init__(self, race = 'human', gclass = 'warden', stats = {'strength':30,'constitution':5,'agility':5,'intelligence':5,'attunement':5}, skills = {'combat':0,'tech':0,'ritual':0}, perks = []):
-		self.race = race
+	def __init__(self, race = 'human', gclass = 'warden', stats = {'strength':30,'constitution':5,'agility':5,'intelligence':5,'attunement':5}, perks = []):
+		self.race = race #only player-exclusive stats should go here if possible
 		self.gclass = gclass #gclass for game class
 		self.stats = stats
-		self.skills = skills
 		self.perks = perks
-
+		#self.abilities
 
 	@property
 	def abilities(self):
@@ -1048,16 +1103,16 @@ def create_v_tunnel(y1,y2,x):
 
 def generate_item(name, x, y): #RETURNS HIGHEST OBJECT, NOT ITEM OR EQUIP COMPONENT
 	if name == 'healing salve':  #only basic stats go here, for special functions and descriptions go to catalog
-		item_component = Item(weight = 0.5, depth_level = 1, use_function = pot_heal)
+		item_component = Item(weight = 0.5, depth_level = 2, use_function = pot_heal)
 		item = Object(x, y, '!', 'healing salve', libtcod.violet, None, None, None, item = item_component)
 	elif name == 'pipe gun':
-		item_component = Item(weight = 1, depth_level = 2, use_function = consumable_pipegun)
+		item_component = Item(weight = 1, depth_level = 1, use_function = consumable_pipegun)
 		item = Object(x, y, '?', 'pipe gun', libtcod.light_blue, None, None, None, item = item_component)
 	elif name == 'crude grenade':
 		item_component = Item(weight = 1, depth_level = 2, use_function = consumable_crudenade)
 		item = Object(x, y, '?', 'crude grenade', libtcod.dark_red, None, None, None, item = item_component)
 	elif name == 'scrap metal sword':
-		item_component = Item(weight = 10, depth_level = 1)
+		item_component = Item(weight = 10, depth_level = 2)
 		equipment_component = Equipment(slot='right hand', base_dmg = [2,6])
 		item = Object(x, y, '/', 'scrap metal sword', libtcod.desaturated_blue, item = item_component, equipment=equipment_component)
 
@@ -1429,13 +1484,35 @@ def pot_heal():
 	message('Your wounds start to feel better.')
 	player.fighter.heal(POTHEAL_AMOUNT)
 
+def draw_laser(origin, end):
+	line = graphical.createline(origin, end)
+	alist = []
+	linecon = console_from_twopts(origin, end)
+	libtcod.console_set_default_background(linecon,libtcod.yellow)
+	libtcod.console_set_key_color(linecon, libtcod.black)
+	for point in line:
+		libtcod.console_put_char(linecon,int(point.x), int(point.y), '+', libtcod.BKGND_SET)
+	libtcod.console_blit(linecon, 0, 0, 0, 0, 0, min(origin.x, end.x), min(origin.y, end.y), 0.5, 0.5)
+	libtcod.console_flush()
+	
+	libtcod.sys_sleep_milli(50)
+
+def console_from_twopts(origin, end):
+	width = abs(max(origin.x, end.x) - min(origin.x, end.x)) + 1
+	height = abs(max(origin.y, end.y) - min(origin.y, end.y)) + 1
+
+	return libtcod.console_new(width, height)
+
+
 def consumable_pipegun():
-	monster = target_monster(5)
+	import graphical
+	monster = target_monster(20)
 	if monster is None:
 		return 'cancelled'
 	else:
 		message('The slug strikes the ' + monster.name + ' with a loud thunder! The damage is '+ str(LIGHTNING_DAMAGE) + ' hit points.', libtcod.light_blue)
 		monster.fighter.take_damage(LIGHTNING_DAMAGE)
+		draw_laser(player, monster)
 
 def consumable_crudenade():
 	(x, y) = target_tile()
