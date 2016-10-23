@@ -1,4 +1,4 @@
-
+from math import pi, acos, hypot
 
 class Point:
 	def __init__(self, x, y):
@@ -19,7 +19,7 @@ def createline(origin_obj, end_obj):
 	n = float(diagonal_distance(corigin, cend))
 	step = float(0)
 	while step <= n:
-		factor = step/ (n+1)
+		factor = step/ (n)
 		interpoints.append(round_point(lerp_point(corigin, cend, factor)))
 		step += 1
 
@@ -56,22 +56,29 @@ def points_to_conpoints(p1, p2):
 
 	return (newp1, newp2)
 
-def determine_direction(origin, end):
-	if end.x == origin.x and end.y == origin.y: return 'samesquare'
-	if end.x > origin.x and end.y > origin.y:
-		return 'to bottom-right'
-	elif end.x < origin.x and end.y < origin.y:
-		return 'to top-left'
-	elif end.x > origin.x and end.y < origin.y:
-		return 'to top-right'
-	elif end.x < origin.x and end.y > origin.y:
-		return 'to bottom-left'
-	elif end.x == origin.x:
-		if end.y > origin.y: return 'down'
-		else: return 'up'
-	elif end.y == origin.x:
-		if end.x > origin.x: return 'right'
-		else: return 'left'
+
+
+def determine_projchar(p1, p2):
+	if p1.y == p2.y: return '-'
+	elif p1.x == p2.x: return '|'
+	elif p1.y > p2.y:
+		lower = p1
+		upper = p2
+	elif p2.y > p1.y: 
+		lower = p2
+		upper = p1
+
+	dy = lower.y - upper.y
+	dx = lower.x - upper.x
+	dist = hypot(dx, dy)
+	theta = acos(float(dx/dist)) * 180 / pi
+
+	if 160 <= theta < 180 or 0 < theta <= 20: return '-'
+	elif 110 <= theta < 160: return '/'
+	elif 70 <= theta < 110: return '|'
+	else: return '\\'
+
+
 
 
 def lerp_point(p1, p2, t):

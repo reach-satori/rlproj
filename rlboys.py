@@ -57,10 +57,6 @@ color_light_ground = libtcod.Color(200, 180, 50)
 
 
 
-
-
-
-
 class SkillTree:
 	def __init__(self, stype, level = 0):
 		self.stype = stype
@@ -74,11 +70,19 @@ class SkillTree:
 
 	def get_available_nodes(self):
 		available_nodes = []
-		for node in self.nodetable:
-			if (node.parent == [] or node.parent == '' or self.check_if_node_leveled(node.parent)) and node.leveled == False: 
-				available_nodes.append(node)
-		if available_nodes == []: raise ValueError('No available nodes to level.')
-		else: return available_nodes
+		if not self.stype == 'perks':
+			for node in self.nodetable:
+				if (node.parent == [] or node.parent == '' or self.check_if_node_leveled(node.parent)) and node.leveled == False: 
+					available_nodes.append(node)
+			if available_nodes == []: textbox('No nodes to select.')
+			else: return available_nodes
+
+		else:
+			for node in self.nodetable:
+				if catalog.pass_perk_requirements(node) and (node.parent == [] or node.parent == '' or self.check_if_node_leveled(node.parent)) and node.leveled == False: 
+					available_nodes.append(node)
+			if available_nodes == []: textbox('No nodes to select.')
+			else: return available_nodes
 
 	def check_if_node_leveled(self, node_s):
 
@@ -160,6 +164,7 @@ class Ccreation:
 		ctree = SkillTree('combat', 1)
 		ttree = SkillTree('tech', 0)
 		rtree = SkillTree('ritual', 0)
+		ptree = SkillTree('perks', 0)
 
 		while self.stage != 'complete':
 			if self.stage == 'race select':
@@ -173,11 +178,10 @@ class Ccreation:
 			elif self.stage == 'skill select':
 				ctree.node_select()
 				self.stage = 'complete'
-
-
-
-
-		clear_screen()
+				clear_screen()
+			# elif self.stage == 'perk select':
+			
+			
 		#return Player(self.chosenrace, self.chosengclass,)
 
 	def statbox(self,choice):
@@ -249,20 +253,21 @@ class Ccreation:
 
 		
 class Player(object):
-	def __init__(self, race = 'human', gclass = 'warden', stats = {'strength':30,'constitution':5,'agility':5,'intelligence':5,'attunement':5}, perks = []):
+	def __init__(self, race = 'human', gclass = 'warden', stats = {'strength':5,'constitution':5,'agility':5,'intelligence':5,'attunement':5}, dodge = 0, perks = []):
 		self.race = race #only player-exclusive stats should go here if possible
 		self.gclass = gclass #gclass for game class
 		self.stats = stats
+		self.dodge = dodge
 		self.perks = perks
 		#self.abilities
 
 	@property
 	def abilities(self):
 		abilitylist = []
-		for tree in (ctree, ttree, rtree):
+		for tree in (ctree, ttree, rtree, ptree):
 			for i in range(1,tree.level+1):
 					for node in tree.nodetable:
-						if node.level == i and node.abilities != None:# and node.leveled:
+						if node.level == i and node.abilities != None and node.leveled:
 							abilitylist += node.abilities
 		self._abilities = abilitylist
 		return self._abilities
@@ -271,42 +276,34 @@ class Player(object):
 	def abilities(self):
 		return self.abilities
 
-		
+class EqSpecial:
+	def __init__(self, on_atk_bonus = {}):
+		self.on_atk_bonus = on_atk_bonus #here i'm gonna add all every different 'type' of item special. Some will probably change things on attack, some on the character, and so on.
 
+	def apply_on_atk_bonus(self, origin, target):
+		if self.on_atk_bonus:
+			bonusdmg = Dmg(0, [1], 0)
+			for bonus in self.on_atk_bonus:
+				if bonus == 'str bonus':
+					bonusdmg.add(origin.player.stats['strength'] * self.on_atk_bonus['str bonus'], [1], 0)
 
-
-
-	
-
-
+		return bonusdmg
 
 
 class Equipment:
-	def __init__(self, slot, base_dmg = [0,0], armor_bonus = 0, dodge_bonus = 0):
+	def __init__(self, slot, base_dmg = [0,0], armor_bonus = 0, dodge_bonus = 0, special = EqSpecial()):
 		self.slot = slot
 		self.is_equipped = False
 		self.base_dmg = base_dmg
 		self.dodge_bonus = dodge_bonus
 		self.armor_bonus = armor_bonus
-		#additional possible attributes: 
-		#self.str_bonus
-		#
+		self.special = special
 
 	def equip(self,equipper):
 		#equip object and show a message about it
 		if equipper == 'player':
 			self.is_equipped = True
-			if (catalog.get_item_special(self) != {}):
-				self.apply_special()  # all unique weapon effects (defined in catalog) apply once equipped
-										#'applying' might mean giving a weapon an attribute or whatever
 			message('Equipped ' + self.owner.name + ' on your ' + self.slot + '.', libtcod.light_green)
-
-	def apply_special(self):
-		special_dict = catalog.get_item_special(self) # special dict is in the form of a dictionary with {special_name: special_value} (0 if not applicable)
-		for special_name in special_dict:
-			if special_name == 'str bonus':
-				self.str_bonus = special_dict['str bonus']
-
 
 
 	def unequip(self):
@@ -357,8 +354,9 @@ class Item:
 
 	def drop(self):
 		#add to the map and remove from the player's inventory. also, place it at the player's coordinates
-		objects.append(self.owner)
+		objects.insert(0,self.owner)
 		inventory.remove(self.owner)
+		if self.owner.equipment and self.owner.equipment.is_equipped: self.owner.equipment.unequip()
 		self.owner.x = player.x
 		self.owner.y = player.y
 		message('You dropped a ' + self.owner.name + '.', libtcod.yellow)
@@ -384,11 +382,10 @@ class Item:
 
 
 class Fighter:
-	def __init__(self, hp, armor, dodge, power, xp,  death_function = None, state = 'normal'):
+	def __init__(self, hp, armor, power, xp,  death_function = None, state = ['normal']):
 		self.max_hp = hp
 		self.hp = hp
 		self.base_armor = armor
-		self.base_dodge = dodge
 		self.base_power = power
 		self.death_function = death_function
 		self.xp = xp
@@ -405,43 +402,47 @@ class Fighter:
 					function(self.owner)
 
 	def attack(self, target):
-		damage = self.power() - target.fighter.armor
-		if damage > 0:
-			message(self.owner.name.capitalize() + ' attacks ' + target.name + ' for ' + str(damage) + ' hit points.')
-			target.fighter.take_damage(damage)
+		if self.owner.player:
+			damage = self.power()
+			for equip in get_all_equipped(self.owner):#equivalent to global player
+				if equip.special.on_atk_bonus:
+					damage.objadd(equip.special.apply_on_atk_bonus(self.owner, target))
+			finaldmg = damage.resolve()
+			finaldmg -= target.fighter.armor
+			if finaldmg > 0:
+				message(self.owner.name.capitalize() + ' attacks ' + target.name + ' for ' + str(int(round(finaldmg))) + ' hit points.')
+				target.fighter.take_damage(finaldmg)
+			else:
+				message(self.owner.name.capitalize() + ' attacks ' + target.name + ' but it has no effect!')
+
 		else:
-			message(self.owner.name.capitalize() + ' attacks ' + target.name + ' but it has no effect!')
+			if libtcod.random_get_int(0, 1, 100) > int(round(target.player.dodge * 1.3)):
+				damage = self.power() - target.fighter.armor
+				if damage > 0:
+					message(self.owner.name.capitalize() + ' attacks ' + target.name + ' for ' + str(int(round(damage))) + ' hit points.')
+					target.fighter.take_damage(damage)
+				else:
+					message(self.owner.name.capitalize() + ' attacks ' + target.name + ' but it has no effect!')
+			else: message(self.owner.name.capitalize() + ' misses ' + target.name + ' completely!', libtcod.lightest_green)
+
 
 	def heal(self, amount):
 		self.hp += amount
 		if self.hp > self.max_hp:
 			self.hp = self.max_hp
 
-
-	def get_multi_bonuses(self):
-		fighter_str_bonus = 0
-		items_rolled_dmg = 0
-
-		if self.owner is player:
-			items_rolled_dmg = sum(equipment.roll_dmg() for equipment in get_all_equipped(self.owner))
-			for equip in get_all_equipped(self.owner):
-				if equip.str_bonus is not None: fighter_str_bonus = int(round(self.owner.player.stats['strength'] * equip.str_bonus))
-				break #also this break will be removed later #by convention, lets say only weapons can have a strength bonus
-
-		else: pass
-
-		multiplicative_component = items_rolled_dmg + fighter_str_bonus
-		return multiplicative_component
-
-
-
-	def power(self, multipliers = [1], flat_bonus = 1):
+	def power(self):
 		if self.owner is player: 
+			equipments = get_all_equipped(self.owner)
+			flat_bonus = 0
+			equiproll = 0
+			multiplicative_component = 0
+			for equip in equipments: equiproll += equip.roll_dmg()
+
 			combat_flatbonus = ctree.level * 2
 			flat_bonus += combat_flatbonus
-			multiplicative_component = self.get_multi_bonuses()
-			full_damage = (multiplicative_component * product(multipliers)) + flat_bonus #final damage formula after all modifiers and before defenses apply
-			return full_damage	
+			multiplicative_component += equiproll
+			return Dmg(multiplicative_component, [1], flat_bonus )
 
 		else: return self.base_power
 
@@ -449,31 +450,45 @@ class Fighter:
 
 	@property
 	def armor(self):  #return actual defense, by summing up the bonuses from all equipped items
-		bonus = sum(equipment.armor_bonus for equipment in get_all_equipped(self.owner))
+		bonus = sum(int(math.ceil(equipment.armor_bonus/2)) for equipment in get_all_equipped(self.owner))
 		return self.base_armor + bonus
-
-	@property
-	def dodge(self):  #return actual defense, by summing up the bonuses from all equipped items
-		bonus = sum(equipment.dodge_bonus for equipment in get_all_equipped(self.owner))
-		return self.base_dodge + bonus
  
 	@property
 	def max_hp(self):  #return actual max_hp, by summing up the bonuses from all equipped items
 		bonus = sum(equipment.max_hp_bonus for equipment in get_all_equipped(self.owner))
 		return self.base_max_hp + bonus
 	
+class Dmg:
+	def __init__(self, multiplicative, multiplier = [1], flat = 1):
+		self.multiplicative = multiplicative
+		self.multiplier = multiplier
+		self.flat = flat
+
+	def add(self, multiplicative, multiplier, flat):
+		self.multiplicative += multiplicative
+		self.multiplier += multiplier
+		self.flat += flat
+
+	def objadd(self, dmgobj):
+		self.multiplicative += dmgobj.multiplicative
+		self.multiplier += dmgobj.multiplier
+		self.flat += dmgobj.flat
+
+	def resolve(self):
+		return (self.multiplicative * product(self.multiplier)) + self.flat
+
 
 
 class DumbMonster:  # basic AI
 	def take_turn(self):
 		monster = self.owner
-		if monster.fighter.state == 'skip turn':
-			monster.state = 'normal'
+		if 'skip turn' in monster.fighter.state:
+			monster.fighter.state.remove('skip turn')
 			return
 
 		if libtcod.map_is_in_fov(fov_map, monster.x, monster.y):
 			if monster.distance_to(player) >= 2:
-				monster.move_towards(player.x, player.y)
+				monster.move_astar(player)
 
 			elif player.fighter.hp >= 0:
 				monster.fighter.attack(player)
@@ -495,12 +510,18 @@ class Rect:
 	def intersect(self,other):
 		return (self.x1 <= other.x2 and self.x2 >= other.x1 and self.y1 <= self.y2 and self.y2 >= other.y1)
 
-
+class SpTile:
+	def __init__(self, char = None, foreground = None, background = None, special = None):
+		self.char = char
+		self.foreground = foreground
+		self.background = background
+		self.special = special
 
 class Tile:
-	def __init__(self, blocked, block_sight = None):
+	def __init__(self, blocked, block_sight = None, special = SpTile()):
 		self.blocked = blocked
 		self.explored = False
+		self.special = special
 
 		#blocks sight by default if blocks movement (standard wall)
 		if block_sight is None:	self.block_sight = blocked
@@ -534,6 +555,48 @@ class Object:
 		self.ai = ai
 		if self.ai:
 			self.ai.owner = self
+
+	def move_astar(self, target):
+		#Create a FOV map that has the dimensions of the map
+		fov = libtcod.map_new(MAP_WIDTH, MAP_HEIGHT)
+ 
+		#Scan the current map each turn and set all the walls as unwalkable
+		for y1 in range(MAP_HEIGHT):
+			for x1 in range(MAP_WIDTH):
+				libtcod.map_set_properties(fov, x1, y1, not map[x1][y1].block_sight, not map[x1][y1].blocked)
+ 
+		#Scan all the objects to see if there are objects that must be navigated around
+		#Check also that the object isn't self or the target (so that the start and the end points are free)
+		#The AI class handles the situation if self is next to the target so it will not use this A* function anyway   
+		for obj in objects:
+			if obj.blocks and obj != self and obj != target:
+				#Set the tile as a wall so it must be navigated around
+				libtcod.map_set_properties(fov, obj.x, obj.y, True, False)
+ 
+		#Allocate a A* path
+		#The 1.41 is the normal diagonal cost of moving, it can be set as 0.0 if diagonal moves are prohibited
+		my_path = libtcod.path_new_using_map(fov, 1.41)
+ 
+		#Compute the path between self's coordinates and the target's coordinates
+		libtcod.path_compute(my_path, self.x, self.y, target.x, target.y)
+ 
+		#Check if the path exists, and in this case, also the path is shorter than 25 tiles
+		#The path size matters if you want the monster to use alternative longer paths (for example through other rooms) if for example the player is in a corridor
+		#It makes sense to keep path size relatively low to keep the monsters from running around the map if there's an alternative path really far away        
+		if not libtcod.path_is_empty(my_path) and libtcod.path_size(my_path) < 25:
+			#Find the next coordinates in the computed full path
+			x, y = libtcod.path_walk(my_path, True)
+			if x or y:
+				#Set self's coordinates to the next path tile
+				self.x = x
+				self.y = y
+		else:
+			#Keep the old move function as a backup so that if there are no paths (for example another monster blocks a corridor)
+			#it will still try to move towards the player (closer to the corridor opening)
+			self.move_towards(target.x, target.y)  
+ 
+		#Delete the path to free memory
+		libtcod.path_delete(my_path)
 
 	def move(self, dx, dy):
 		if not is_blocked(self.x+dx, self.y+dy):
@@ -853,6 +916,9 @@ def handle_keys():
 					else:
 						chosen_item.equip_options()
 
+			# elif key_char == ']':
+			# 	raise ValueError(get_equipped_in_slot('right hand').is_equipped)
+
 			elif key_char == 'z':
 				ability_choices = [ability for ability in player.player.abilities]
 				choice = menu('Press a key for an ability, or any other to cancel.', ability_choices, SCREEN_WIDTH/2)
@@ -860,6 +926,11 @@ def handle_keys():
 				if choice is not None:
 					if ability_choices[choice] == 'kicklaunch':
 						player.abl_kicklaunch()
+
+			elif key_char == 'a':
+				chosen_item = inventory_menu('Press the key next to an item to use it.\n')
+				if chosen_item is not None:
+					chosen_item.use()
 					
 
 
@@ -875,7 +946,7 @@ def handle_keys():
 				if chosen_item is not None:
 					chosen_item.drop()
 
-			elif key_char == '.':
+			elif key_char == '.' and key.shift:
 				if player.x == stairs.x and player.y == stairs.y:
 					next_level()
 				else:
@@ -990,7 +1061,7 @@ def place_items_in_level():
 		if not is_blocked(x,y):
 			items_to_place[i].x = x
 			items_to_place[i].y = y
-			objects.append(items_to_place[i])
+			objects.insert(0, items_to_place[i])
 			i += 1
 
 def get_full_item_list():
@@ -1029,6 +1100,7 @@ def render_all():
 
 	for object in objects:
 		object.draw()
+
 	player.draw()
 
 	#blits the content of the 'con' console to the root console
@@ -1103,30 +1175,40 @@ def create_v_tunnel(y1,y2,x):
 
 def generate_item(name, x, y): #RETURNS HIGHEST OBJECT, NOT ITEM OR EQUIP COMPONENT
 	if name == 'healing salve':  #only basic stats go here, for special functions and descriptions go to catalog
-		item_component = Item(weight = 0.5, depth_level = 2, use_function = pot_heal)
-		item = Object(x, y, '!', 'healing salve', libtcod.violet, None, None, None, item = item_component)
+		item_component = Item(weight = 0.5, depth_level = 1, use_function = pot_heal)
+		item = Object(x, y, '!', name, libtcod.violet, None, None, None, item = item_component)
 	elif name == 'pipe gun':
-		item_component = Item(weight = 1, depth_level = 1, use_function = consumable_pipegun)
-		item = Object(x, y, '?', 'pipe gun', libtcod.light_blue, None, None, None, item = item_component)
+		item_component = Item(weight = 1, depth_level = 2, use_function = consumable_pipegun)
+		item = Object(x, y, '?', name, libtcod.light_blue, None, None, None, item = item_component)
 	elif name == 'crude grenade':
 		item_component = Item(weight = 1, depth_level = 2, use_function = consumable_crudenade)
-		item = Object(x, y, '?', 'crude grenade', libtcod.dark_red, None, None, None, item = item_component)
+		item = Object(x, y, '?', name, libtcod.dark_red, None, None, None, item = item_component)
 	elif name == 'scrap metal sword':
-		item_component = Item(weight = 10, depth_level = 2)
-		equipment_component = Equipment(slot='right hand', base_dmg = [2,6])
-		item = Object(x, y, '/', 'scrap metal sword', libtcod.desaturated_blue, item = item_component, equipment=equipment_component)
+		item_component = Item(weight = 10, depth_level = 1)
+		special_component = EqSpecial(on_atk_bonus = {'str bonus':0.3})
+		equipment_component = Equipment(slot='right hand', base_dmg = [2,6], special = special_component)
+		item = Object(x, y, '/', name, libtcod.desaturated_blue, item = item_component, equipment=equipment_component)
+	elif name == 'metal plate':
+		item_component = Item(weight = 5, depth_level = 2)
+		equipment_component = Equipment(slot='left hand', armor_bonus = 3, dodge_bonus = 2)
+		item = Object(x, y, '[', name, libtcod.light_grey, item = item_component, equipment=equipment_component)
+	elif name == 'goat leather sandals':
+		item_component = Item(weight = 2, depth_level = 2)
+		equipment_component = Equipment(slot='left hand', dodge_bonus = 2)
+		item = Object(x, y, '[', name, libtcod.dark_sepia, item = item_component, equipment=equipment_component)
+
 
 	return item
 
 def generate_monster(name, x, y):
-	if name == 'rat':
-		fighter_component = Fighter(hp = 10, armor = 0, dodge = 0, power = 3, xp = 10, death_function = monster_death)
+	if name == 'crazed mutt':
+		fighter_component = Fighter(hp = 10, armor = 0, power = 5, xp = 10, death_function = monster_death)
 		ai_component = DumbMonster()
-		monster = Object(x, y, 'r', 'rat', libtcod.desaturated_green, blocks = True, fighter = fighter_component, ai = ai_component)
-	elif name == 'nasty rat':
-		fighter_component = Fighter(hp = 15, armor = 1, dodge = 0, power = 4, xp = 25, death_function = monster_death)
+		monster = Object(x, y, 'd', name, libtcod.lighter_red, blocks = True, fighter = fighter_component, ai = ai_component)
+	elif name == 'mad hermit':
+		fighter_component = Fighter(hp = 15, armor = 1, power = 7, xp = 25, death_function = monster_death)
 		ai_component = DumbMonster()
-		monster = Object(x, y, 'r', 'nasty rat', libtcod.red, blocks = True, fighter = fighter_component, ai = ai_component)
+		monster = Object(x, y, 'h', name, libtcod.lighter_red, blocks = True, fighter = fighter_component, ai = ai_component)
 
 	return monster
 
@@ -1139,7 +1221,7 @@ def place_objects(room):
 		if not is_blocked(x,y):
 	###################### MONSTER RNG SHIT #######################
 	#REDO LATER WITH FANCY PDFs
-			monster_chance = {'rat': 80, 'nasty rat': 20}
+			monster_chance = {'crazed mutt': 80, 'mad hermit': 20}
 			choice = random_choice(monster_chance)
 			monster = generate_monster(choice,x,y)
 	###################### MONSTER RNG SHIT #######################
@@ -1159,10 +1241,10 @@ def is_blocked(x,y):
 	return False
 
 def product(iterable):
-    p= 1
-    for n in iterable:
-        p *= n
-    return p
+	p= 1
+	for n in iterable:
+		p *= n
+	return p
 
 def player_move_or_attack(dx,dy):
 	global fov_recompute
@@ -1240,11 +1322,10 @@ def inventory_menu(header):
 	else:
 		options = []
 		for item in inventory:
-			text = item.name
-			#show additional information, in case it's equipped
-			if item.equipment and item.equipment.is_equipped:
-				text = text + ' (on ' + item.equipment.slot + ')'
-			options.append(text)
+			if item.equipment and not item.equipment.is_equipped:
+				text = item.name
+				options.append(text)
+			elif not item.equipment: options.append(item.name)
 
 	index = menu(header, options, INVENTORY_WIDTH)
 
@@ -1352,7 +1433,7 @@ def msgbox(message, width=50):
 def initialize_player():
 	global player
 	player_component = Player()
-	fighter_component = Fighter(hp=30, armor = 3, dodge = 3, power=3, xp = 0, death_function = player_death)
+	fighter_component = Fighter(hp=30, armor = 3, power=3, xp = 0, death_function = player_death)
 	player = Object(0,0, '@', 'player', libtcod.white, blocks = True, fighter = fighter_component, player = player_component)
 	player.lvl = 1
 
@@ -1362,10 +1443,12 @@ def target_tile(max_range = None):
 	message('Choose a target - ESC to cancel.', libtcod.red)
 	targeter = Object(player.x, player.y, '+', 'targeter', libtcod.red,ignore_fov = True)
 	objects.append(targeter)
-	targeter.send_to_front()
+	
 
 	while True:
+
 		render_all()
+		targeter.send_to_front()
 		targeter.clear()
 		libtcod.console_flush()
 		keyb = libtcod.console_wait_for_keypress(True)
@@ -1396,6 +1479,9 @@ def target_tile(max_range = None):
 		elif keyb.vk == libtcod.KEY_KP3:
 			targeter.unblocked_move(1,1)
 
+		elif keyb.vk == libtcod.KEY_KP5:
+			pass
+
 		elif (keyb.vk == libtcod.KEY_ENTER and libtcod.map_is_in_fov(fov_map, targeter.x, targeter.y) and (max_range is None or player.distance_to(targeter) <= max_range)):
 
 			targeter.clear()
@@ -1404,6 +1490,7 @@ def target_tile(max_range = None):
 
 		elif (keyb.vk == libtcod.KEY_ENTER and not libtcod.map_is_in_fov(fov_map, targeter.x, targeter.y)):
 			message('You cannot target there!', libtcod.grey)
+
 
 		elif keyb.vk == libtcod.KEY_ESCAPE:
 			targeter.clear()
@@ -1439,16 +1526,18 @@ def random_adj_target():
 
  
 def target_monster(max_range=None):
-	#returns a clicked monster inside FOV up to a range, or None if right-clicked
+	
 	while True:
 		(x, y) = target_tile(max_range)
 		if x is None:  #player cancelled
 			return None
 
-	#return the first clicked monster, otherwise continue looping
+	
 		for obj in objects:
 			if obj.x == x and obj.y == y and obj.fighter and obj != player:
 				return obj
+
+		message('Nothing to target there!', libtcod.grey)
 
 def clear_game():
 	global objects, inventory
@@ -1469,7 +1558,8 @@ def new_game():
 	initialize_fov()
 
 	game_state = 'playing'
-	inventory = []
+	item = generate_item('scrap metal sword', 0, 0)
+	inventory = [item]
 
 	#create the list of game messages and their colors, starts empty
 	game_msgs = []
@@ -1484,17 +1574,17 @@ def pot_heal():
 	message('Your wounds start to feel better.')
 	player.fighter.heal(POTHEAL_AMOUNT)
 
-def draw_laser(origin, end):
+def draw_laser(origin, end, char, color):
 	line = graphical.createline(origin, end)
-	alist = []
+
 	linecon = console_from_twopts(origin, end)
-	libtcod.console_set_default_background(linecon,libtcod.yellow)
-	libtcod.console_set_key_color(linecon, libtcod.black)
+	libtcod.console_set_default_foreground(linecon, color)
 	for point in line:
-		libtcod.console_put_char(linecon,int(point.x), int(point.y), '+', libtcod.BKGND_SET)
-	libtcod.console_blit(linecon, 0, 0, 0, 0, 0, min(origin.x, end.x), min(origin.y, end.y), 0.5, 0.5)
+		libtcod.console_put_char(linecon,int(point.x), int(point.y), char, libtcod.BKGND_NONE)
+
+	libtcod.console_blit(linecon, 0, 0, 0, 0, 0, min(origin.x, end.x), min(origin.y, end.y), 1, 0)
 	libtcod.console_flush()
-	
+
 	libtcod.sys_sleep_milli(50)
 
 def console_from_twopts(origin, end):
@@ -1503,21 +1593,19 @@ def console_from_twopts(origin, end):
 
 	return libtcod.console_new(width, height)
 
-
 def consumable_pipegun():
-	import graphical
 	monster = target_monster(20)
 	if monster is None:
 		return 'cancelled'
 	else:
-		message('The slug strikes the ' + monster.name + ' with a loud thunder! The damage is '+ str(LIGHTNING_DAMAGE) + ' hit points.', libtcod.light_blue)
+		message('The slug explodes out of the flimsy gun with a loud thunder and strikes the ' + monster.name + '! The damage is '+ str(LIGHTNING_DAMAGE) + ' hit points.', libtcod.light_blue)
 		monster.fighter.take_damage(LIGHTNING_DAMAGE)
-		draw_laser(player, monster)
+		draw_laser(player, monster, graphical.determine_projchar(player, monster), libtcod.light_blue)
 
 def consumable_crudenade():
 	(x, y) = target_tile()
 	if x is None: return 'cancelled'
-	message('The grenade explodes, burning everything within ' + str(FIREBALL_RADIUS) + ' tiles!', libtcod.orange)
+	message('The grenade explodes, spraying everything within ' + str(FIREBALL_RADIUS) + ' tiles with shrapnel!', libtcod.orange)
 
 	for obj in objects:  #damage every fighter in range, including the player
 		if obj.distance(x, y) <= FIREBALL_RADIUS and obj.fighter:
