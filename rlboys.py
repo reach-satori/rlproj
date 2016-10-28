@@ -321,13 +321,13 @@ class Equipment:
 		#equip object and show a message about it
 		if equipper == 'player':
 			self.is_equipped = True
-			message('Equipped ' + self.owner.name + ' on your ' + self.slot + '.', libtcod.light_green)
+			message('Equipped ' + self.owner.item.dname + ' on your ' + self.slot + '.', libtcod.light_green)
 
 
 	def unequip(self):
 		if not self.is_equipped: return
 		self.is_equipped = False
-		message('Unequipped ' + self.owner.name + ' from ' + self.slot + '.', libtcod.light_yellow)
+		message('Unequipped ' + self.owner.item.dname + ' from ' + self.slot + '.', libtcod.light_yellow)
 
 	def equip_options(self): #upon getting chosen from the equipment menu
 		options = ['Examine', 'Unequip', 'Drop']
@@ -350,10 +350,15 @@ class Equipment:
 
 
 class Item:
-	def __init__(self, weight, depth_level = 1, use_function = None):
+	def __init__(self, weight, depth_level = 1, use_function = None, itemtype = 'gadget'):
 		self.weight = weight
 		self.use_function = use_function
 		self.depth_level = depth_level
+		self.identified = False
+		self.already_seen = False
+		self.itemtype = itemtype
+		#possible itemtypes: equipment, salve, gadget, trinket
+
 
 	def pick_up(self):
 		if len(inventory)>=26:
@@ -361,7 +366,7 @@ class Item:
 		else:
 			inventory.append(self.owner)  # inventory has objects, not item
 			objects.remove(self.owner)
-			message('You picked up a ' + self.owner.name + '!', libtcod.green)
+			message('You picked up ' + self.dname + '!', libtcod.green)
 
 	def use(self):
 		if self.use_function == None:
@@ -377,13 +382,21 @@ class Item:
 		if self.owner.equipment and self.owner.equipment.is_equipped: self.owner.equipment.unequip()
 		self.owner.x = player.x
 		self.owner.y = player.y
-		message('You dropped a ' + self.owner.name + '.', libtcod.yellow)
+		message('You dropped a ' + self.dname + '.', libtcod.yellow)
 
 	def examine(self):
-		itemname = self.owner.name
-		text = catalog.get_item_description(itemname)
+		text = catalog.get_item_description(self)
 
 		textbox(text)
+
+	# def name_for_display(self):
+	# 	if not self.identified:
+	# 		if self.owner.equipment: 
+	# 			unidname = 'an unidentified ' + self.owner.name
+	# 			return unidname
+	# 		elif 'salve' in self.owner.name:
+	# 			return catalog.random_salve_name(self)
+# replaced by property dname
 
 	def item_options(self):
 		options = ['Examine', 'Drop', 'Use']
@@ -397,7 +410,23 @@ class Item:
 		if index == 2: #use
 			self.use()
 
+	@property
+	def dname(self):
+		global namekeeper
+		if self.owner.name in namekeeper:
+			self.already_seen = True
 
+
+		if not self.identified:
+			if self.itemtype == 'equipment': 
+				unidname = 'an unidentified ' + self.owner.name
+			elif self.itemtype == 'salve': 
+				if not self.already_seen:
+					unidname = catalog.random_salve_name(self)
+					namekeeper[self.owner.name] = unidname
+				else: unidname = namekeeper[self.owner.name]
+			else: return self.owner.name
+			return unidname
 
 class Fighter:
 	def __init__(self, hp, armor, power, xp,  death_function = None, state = ['normal']):
@@ -514,6 +543,7 @@ class DumbMonster:  # basic AI
 			if monster.distance_to(player) >= 2:
 				monster.move_astar(player)
 
+
 			elif player.fighter.hp >= 0:
 				monster.fighter.attack(player)
 
@@ -536,14 +566,19 @@ class Rect:
 		#check if rectangle intersects with another one
 
 class SpTile:
-	def __init__(self, char = None, foreground = None, background = None, special = None):
+	def __init__(self, char = None, foreground = None, background = None, onwalk_effect = None):
 		self.char = char
 		self.foreground = foreground
 		self.background = background
-		self.special = special
+		self.onwalk_effect = onwalk_effect
+
+	def apply_onwalk(self, walker):
+		if self.onwalk_effect and walker.fighter:
+			for effect in self.onwalk_effect:
+				if effect == 'damage': walker.fighter.take_damage(self.onwalk_effect['damage'])
 
 class Tile:
-	def __init__(self, blocked, block_sight = None, special = SpTile()):
+	def __init__(self, blocked, block_sight = None, special = None):
 		self.blocked = blocked
 		self.explored = False
 		self.special = special
@@ -551,6 +586,7 @@ class Tile:
 		#blocks sight by default if blocks movement (standard wall)
 		if block_sight is None:	self.block_sight = blocked
 		
+
 
 
 class Object:
@@ -565,13 +601,16 @@ class Object:
 		self.player = player
 
 
-		self.item = item
-		if self.item:
-			self.item.owner = self
+
 
 		self.equipment = equipment
 		if self.equipment:
 			self.equipment.owner = self
+
+		self.item = item
+		if self.item:
+			self.item.owner = self
+			if self.equipment: self.item.itemtype = 'equipment'
 
 		self.fighter = fighter
 		if self.fighter:
@@ -615,6 +654,8 @@ class Object:
 				#Set self's coordinates to the next path tile
 				self.x = x
 				self.y = y
+				if map[self.x][self.y].special and map[self.x][self.y].special.onwalk_effect:
+					map[self.x][self.y].special.apply_onwalk(self)
 		else:
 			#Keep the old move function as a backup so that if there are no paths (for example another monster blocks a corridor)
 			#it will still try to move towards the player (closer to the corridor opening)
@@ -627,6 +668,13 @@ class Object:
 		if not is_blocked(self.x+dx, self.y+dy):
 			self.x += dx
 			self.y += dy
+
+		if map[self.x][self.y].special and map[self.x][self.y].special.onwalk_effect:
+			map[self.x][self.y].special.apply_onwalk(self)
+
+
+
+
 
 	def unblocked_move(self, dx, dy):
 		self.x += dx
@@ -744,7 +792,7 @@ def tree_lvlup():
 		elif index is 2:
 			if rtree.node_select(): break
 
-		
+
 
 def normal_randomize(mean,sd): #input mean, sd for gauss distribution
 
@@ -760,7 +808,9 @@ def main_menu():
 		choice = menu('', ['Play a new game', 'Continue last game', 'Quit'], 24)
 
 		if choice == 0:  #new game
+			ccreation = Ccreation()
 			ccreation.run_creation()
+
 			initialize_player()
 			libtcod.console_clear(con)
 			new_game()
@@ -1124,17 +1174,27 @@ def render_all():
 		for x in range(MAP_WIDTH):
 			visible = libtcod.map_is_in_fov(fov_map, x, y)
 			wall = map[x][y].block_sight
+			special = map[x][y].special
 			if not visible:
 				if map[x][y].explored:
 					if wall:
 						libtcod.console_put_char_ex(con, x, y, '#', color_dark_wall, libtcod.black)
 					else:
-						libtcod.console_put_char_ex(con, x, y, '.', color_dark_ground, libtcod.black )
+						libtcod.console_put_char_ex(con, x, y, '.', color_dark_ground, libtcod.black)
+					if special and wall:
+						libtcod.console_put_char_ex(con, x, y, special.char, color_dark_wall, libtcod.black)
+					elif special and not wall:
+						libtcod.console_put_char_ex(con, x, y, special.char, color_dark_ground, libtcod.black)
+
 			else: #it's visible
 				if wall:
 					libtcod.console_put_char_ex(con, x, y, '#', color_light_wall, libtcod.black)
 				else:
-					libtcod.console_put_char_ex(con, x, y, '.', color_light_ground, libtcod.black )
+					libtcod.console_put_char_ex(con, x, y, '.', color_light_ground, libtcod.black)
+				if special:
+					libtcod.console_put_char_ex(con, x, y, special.char, special.foreground, special.background)
+
+
 				map[x][y].explored = True
 
 
@@ -1215,13 +1275,13 @@ def create_v_tunnel(y1,y2,x):
 
 def generate_item(name, x, y): #RETURNS HIGHEST OBJECT, NOT ITEM OR EQUIP COMPONENT
 	if name == 'healing salve':  #only basic stats go here, for special functions and descriptions go to catalog
-		item_component = Item(weight = 0.5, depth_level = 1, use_function = pot_heal)
+		item_component = Item(weight = 0.5, depth_level = 1, use_function = pot_heal, itemtype = 'salve')
 		item = Object(x, y, '!', name, libtcod.violet, None, None, None, item = item_component)
 	elif name == 'pipe gun':
-		item_component = Item(weight = 1, depth_level = 2, use_function = consumable_pipegun)
+		item_component = Item(weight = 1, depth_level = 2, use_function = consumable_pipegun, itemtype = 'gadget')
 		item = Object(x, y, '?', name, libtcod.light_blue, None, None, None, item = item_component)
 	elif name == 'crude grenade':
-		item_component = Item(weight = 1, depth_level = 2, use_function = consumable_crudenade)
+		item_component = Item(weight = 1, depth_level = 2, use_function = consumable_crudenade, itemtype = 'gadget')
 		item = Object(x, y, '?', name, libtcod.dark_red, None, None, None, item = item_component)
 	elif name == 'scrap metal sword':
 		item_component = Item(weight = 10, depth_level = 1)
@@ -1237,8 +1297,13 @@ def generate_item(name, x, y): #RETURNS HIGHEST OBJECT, NOT ITEM OR EQUIP COMPON
 		equipment_component = Equipment(slot='boots', dodge_bonus = 2)
 		item = Object(x, y, '[', name, libtcod.dark_sepia, item = item_component, equipment=equipment_component)
 
-
 	return item
+
+def generate_tile(name, x, y):
+	if name == 'jagged rock':
+		special_component = SpTile(',', libtcod.white, libtcod.black, onwalk_effect = {'damage':2})
+		tile = Tile(False, None, special_component)
+	return tile
 
 def generate_monster(name, x, y):
 	if name == 'crazed mutt':
@@ -1369,7 +1434,7 @@ def inventory_menu(header):
 	else:
 		options = []
 		for item in inv:
-				text = item.name
+				text = item.item.dname
 				options.append(text)
 
 	index = menu(header, options, INVENTORY_WIDTH)
@@ -1383,7 +1448,7 @@ def action_equip_menu(header):
 	inv = displayinv()
 	for item in inv:
 		if item.equipment and item.equipment.is_equipped == False:
-			options.append(item.name)
+			options.append(item.item.dname)
 			output_item.append(item)
 
 	if len(options) == 0:
@@ -1405,7 +1470,7 @@ def equipment_menu(header):
 			options.append(slot + ':     - ')
 		else:
 			outputitem.append(equipment)
-			options.append(slot + ':    ' + equipment.owner.name)	
+			options.append(slot + ':    ' + equipment.owner.item.dname)	
 
 	index = menu(header, options, INVENTORY_WIDTH)
 
@@ -1607,7 +1672,7 @@ def clear_game():
 	clear_screen()
 
 def new_game():
-	global player, game_msgs, game_state, inventory, dungeon_level
+	global player, game_msgs, game_state, inventory, dungeon_level, namekeeper
 	
 	dungeon_level = 1
 	make_map()
@@ -1615,6 +1680,7 @@ def new_game():
 
 	game_state = 'playing'
 	inventory = []
+	namekeeper = {}
 
 	#create the list of game messages and their colors, starts empty
 	game_msgs = []
@@ -1681,7 +1747,7 @@ libtcod.console_init_root(SCREEN_WIDTH, SCREEN_HEIGHT, 'python/libtcod tutorial'
 libtcod.sys_set_fps(LIMIT_FPS)
 con = libtcod.console_new(MAP_WIDTH, MAP_HEIGHT)
 panel = libtcod.console_new(SCREEN_WIDTH, PANEL_HEIGHT)
-ccreation = Ccreation()
+
 
 
 

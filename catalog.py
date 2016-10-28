@@ -1,4 +1,4 @@
-
+from random import choice
 
 SLOTLIST = ['head', 
 			'hands', 
@@ -31,6 +31,47 @@ FULL_GCLASSLIST = ['warden',
 				'placeholder1',
 				'placeholder2']
 
+salve_adjs= ['red',
+			'blue',
+			'green',
+			'brown',
+			'purple',
+			'disgusting',
+			'pink',
+			'rainbow-coloured'
+			'dull',
+			'pale',
+			'milky',
+			'white',
+			'sticky',
+			'golden',
+			'black',
+			'smelly',
+			'flowery',
+			'bronze',
+			'metallic',
+			'shining',
+			'swirling',
+			'liquid',
+			'nearly solid',
+			'watery',
+			'vibrant',
+			'dry',
+			'greenish',
+			'blueish',
+			'sickly',
+			'heavy',
+			'fuming',
+			'steaming',
+			'silvery',
+			'crusty',
+			'flaky',
+			'slowly bubbling',
+			'hot',
+			'sizzling',
+			'cold',
+			'orange',
+			]
 
 
 class SkillNode(object):
@@ -44,9 +85,6 @@ class SkillNode(object):
 
 	def levelup(self):
 		self.leveled = True
-
-
-
 
 
 def get_nodetable(treename):
@@ -106,41 +144,65 @@ def ccreation_stats(choice):
 
 	return stats
 
+def random_salve_name(salve):
+	if 0 < salve.depth_level <= 4:
+		adjnum = 1
+	elif 4 < salve.depth_level <= 9:
+		adjnum = 2
+	else: adjnum = 3
 
-def get_item_description(itemname):
-	if itemname == 'scrap metal sword':
-		description = ['Scrap metal sword',
-				'A sword made out of spare scrap metal.',
-				'Metal spurs protrude from the dull blade and veins of rust run across it.',
-				"Barely usable as a weapon, but still better than your fists. Just don't cut yourself.",
-				'',
-				'Damage roll: 2-6',
-				'Strength bonus: 30%%',
-				'Weight: 10']
+	adjlist = []
+	for index in range(adjnum):
+		adjlist.append(choice(salve_adjs))
 
-	elif itemname == 'crude grenade':
+	name = 'a ' + ', '.join(adjlist) + ' salve'
+	return name
+
+
+
+
+		
+
+def get_item_description(item):
+	if item.owner.name == 'scrap metal sword':
+		description = [
+					'Scrap metal sword',
+					'A sword made out of spare scrap metal.',
+					'Metal spurs protrude from the dull blade and veins of rust run across it.',
+					"Barely usable as a weapon, but still better than your fists. Just don't cut yourself."
+					]
+		if item.identified: description + [
+		'',
+		'Damage roll: 2-6',
+		'Strength bonus: 30%%',
+		'Weight: 10'
+		]
+
+	elif item.owner.name == 'crude grenade':
 		description = ['Crude grenade',
 				'placeholder']
 
-	elif itemname == 'healing salve':
+	elif item.owner.name == 'healing salve':
 		description = ['Healing salve',
 				'placeholder']
 
-	elif itemname == 'pipe gun':
+	elif item.owner.name == 'pipe gun':
 		description = ['Pipe gun',
 				'placeholder']
 
-	elif itemname == 'goat leather sandals':
+	elif item.owner.name == 'goat leather sandals':
 		description = ['Goat leather sandals.',
-				'Better than cow leather, surprisingly.',
+				'Comfortable and better than cow leather, surprisingly.']
+		if item.identified: description + [
 				'',
 				'Dodge bonus: 2',
 				'Weight: 2']
 
-	elif itemname == 'metal plate':
+	elif item.owner.name == 'metal plate':
 		description = ['Strapped metal plate.',
 				'A mishapen piece of flat metal with a strap, to hold on to.',
-				'Will serve as a shield, for now.',
+				'Will serve as a shield, for now.']
+		if item.identified: description + [
 				'',
 				'Armor bonus: 3',
 				'Dodge bonus: 2',
