@@ -57,6 +57,8 @@ color_light_ground = libtcod.Color(200, 180, 50)
 
 
 
+
+
 class SkillTree:
 	def __init__(self, stype, level = 0):
 		self.stype = stype
@@ -66,23 +68,15 @@ class SkillTree:
 	def get_node_from_name(self, name):
 		for node in self.nodetable:
 			if node.name == name: return node
-		else: raise ValueError('Skill list node that does not exist requested!')
+			else: raise ValueError('Skill list node that does not exist requested!')
 
 	def get_available_nodes(self):
 		available_nodes = []
-		if not self.stype == 'perks':
-			for node in self.nodetable:
-				if (node.parent == [] or node.parent == '' or self.check_if_node_leveled(node.parent)) and node.leveled == False: 
-					available_nodes.append(node)
-			if available_nodes == []: textbox('No nodes to select.')
-			else: return available_nodes
-
-		else:
-			for node in self.nodetable:
-				if catalog.pass_perk_requirements(node) and (node.parent == [] or node.parent == '' or self.check_if_node_leveled(node.parent)) and node.leveled == False: 
-					available_nodes.append(node)
-			if available_nodes == []: textbox('No nodes to select.')
-			else: return available_nodes
+		for node in self.nodetable:
+			if (node.parent == [] or node.parent == '' or self.check_if_node_leveled(node.parent)) and node.leveled == False: 
+				available_nodes.append(node)
+		if available_nodes == []: textbox('No nodes to select.')
+		else: return available_nodes
 
 	def check_if_node_leveled(self, node_s):
 
@@ -115,19 +109,24 @@ class SkillTree:
 			letter_index += 1
 		libtcod.console_blit(skillbox,0,0,0,0,0,0,0)
 		libtcod.console_flush()
-
+		choice = False
 		while True:
+			libtcod.console_flush()
 
 			key = libtcod.console_wait_for_keypress(True)
-			if key.vk == libtcod.KEY_ENTER and choice != None:
-				choice.leveled = True
-				return
+			if key.vk == libtcod.KEY_ENTER:
+				if choice:
+					choice.levelup()
+					return True
+				else:
+					textbox('No node chosen.')
+					continue
 			elif key.vk == libtcod.KEY_ESCAPE:
 				return
 			index = key.c - ord('a')
 			choice = options[index]
 			self.node_description(choice)
-			libtcod.console_flush()
+			
 
 		
 	def node_description(self, node):
@@ -143,9 +142,26 @@ class SkillTree:
 
 		libtcod.console_blit(skillcon, 0, 0, 0, 0, 0, 2, height + 2) 
 
+	@property
+	def level(self):
+		maxlvl = 0
+		for node in self.nodetable:
+			if node.leveled and node.tier > maxlvl: maxlvl = node.tier  #tree level is = to highest skill node tier
+
+		return maxlvl
+	
+class PerkTree(SkillTree):
+	def get_available_nodes(self):
+		for node in self.nodetable:
+				if pass_perk_requirements(node) and (node.parent == [] or node.parent == '' or self.check_if_node_leveled(node.parent)) and node.leveled == False: 
+					available_nodes.append(node)
+		if available_nodes == []: textbox('No nodes to select.')
+		else: return available_nodes
+
+
 
 #SKILL TREE DATA STRUCTURE:
-#One SkillTree object for each type (combat, tech, ritual), each containing appropriate nodetable objects gotten from the catalog
+#One SkillTree (perktree inherited for perks) object for each type (combat, tech, ritual, perks), each containing appropriate nodetable objects gotten from the catalog
 #abilities are passed on to the player in the Player's abilities property whenever they are called (getter decorator)
 #haven't done passive bonuses yet
 
@@ -160,11 +176,11 @@ class Ccreation:
 		self.chosenperk = chosenperk
 
 	def run_creation(self):
-		global ctree, ttree, rtree 
+		global ptree, ctree, ttree, rtree 
 		ctree = SkillTree('combat', 1)
 		ttree = SkillTree('tech', 0)
 		rtree = SkillTree('ritual', 0)
-		ptree = SkillTree('perks', 0)
+		ptree = PerkTree('perks', 0)
 
 		while self.stage != 'complete':
 			if self.stage == 'race select':
@@ -176,7 +192,7 @@ class Ccreation:
 				self.statbox(self.chosengclass)
 				self.chosengclass = self.choicebox()
 			elif self.stage == 'skill select':
-				ctree.node_select()
+				tree_lvlup()
 				self.stage = 'complete'
 				clear_screen()
 			# elif self.stage == 'perk select':
@@ -265,10 +281,9 @@ class Player(object):
 	def abilities(self):
 		abilitylist = []
 		for tree in (ctree, ttree, rtree, ptree):
-			for i in range(1,tree.level+1):
-					for node in tree.nodetable:
-						if node.level == i and node.abilities != None and node.leveled:
-							abilitylist += node.abilities
+			for node in tree.nodetable:
+				if node.abilities != None and node.leveled:
+					abilitylist += node.abilities
 		self._abilities = abilitylist
 		return self._abilities
 
@@ -298,6 +313,9 @@ class Equipment:
 		self.dodge_bonus = dodge_bonus
 		self.armor_bonus = armor_bonus
 		self.special = special
+
+		if self.special:
+			self.special.owner = self
 
 	def equip(self,equipper):
 		#equip object and show a message about it
@@ -393,7 +411,8 @@ class Fighter:
 
 
 	def take_damage(self,damage):
-		if damage > 0:
+		if isinstance(damage, Dmg): damage = damage.resolve()
+		elif damage > 0:
 			self.hp -= damage
 			if self.hp < 0:
 				player.fighter.xp += self.xp
@@ -431,20 +450,24 @@ class Fighter:
 		if self.hp > self.max_hp:
 			self.hp = self.max_hp
 
-	def power(self):
-		if self.owner is player: 
+	def power(self, multipliers = [1]):
+
+		if self.owner is player:
+
 			equipments = get_all_equipped(self.owner)
 			flat_bonus = 0
 			equiproll = 0
 			multiplicative_component = 0
-			for equip in equipments: equiproll += equip.roll_dmg()
+			for equip in equipments: 
+				equiproll += equip.roll_dmg()
 
 			combat_flatbonus = ctree.level * 2
 			flat_bonus += combat_flatbonus
 			multiplicative_component += equiproll
-			return Dmg(multiplicative_component, [1], flat_bonus )
+			return Dmg(multiplicative_component, product(multipliers), flat_bonus)
 
-		else: return self.base_power
+		else:
+			return self.base_power
 
 																			
 
@@ -461,7 +484,8 @@ class Fighter:
 class Dmg:
 	def __init__(self, multiplicative, multiplier = [1], flat = 1):
 		self.multiplicative = multiplicative
-		self.multiplier = multiplier
+		if not hasattr(multiplier, '__iter__'): self.multiplier = [multiplier]
+		else: self.multiplier = multiplier
 		self.flat = flat
 
 	def add(self, multiplicative, multiplier, flat):
@@ -509,6 +533,7 @@ class Rect:
 
 	def intersect(self,other):
 		return (self.x1 <= other.x2 and self.x2 >= other.x1 and self.y1 <= self.y2 and self.y2 >= other.y1)
+		#check if rectangle intersects with another one
 
 class SpTile:
 	def __init__(self, char = None, foreground = None, background = None, special = None):
@@ -672,6 +697,7 @@ class Object:
 			dx = -3
 
 		dmg = self.fighter.power(multipliers = [0.5])
+		dmg = dmg.resolve()
 		target.fighter.take_damage(dmg)
 		message('You put all your strength behind a mighty kick, dealing ' + str(int(round(dmg))) + ' damage.', libtcod.light_red)
 		##########################################################################################
@@ -703,7 +729,21 @@ class Object:
 					return
 
 		#####################
-		
+
+
+def tree_lvlup():
+	options = ['Combat', 'Tech', 'Ritual']
+
+	while True:
+		index = menu('Choose skill tree', options, SCREEN_WIDTH)
+		if index is None: continue
+		elif index is 0:
+			if ctree.node_select(): break
+		elif index is 1:
+			if ttree.node_select(): break
+		elif index is 2:
+			if rtree.node_select(): break
+
 		
 
 def normal_randomize(mean,sd): #input mean, sd for gauss distribution
@@ -1194,7 +1234,7 @@ def generate_item(name, x, y): #RETURNS HIGHEST OBJECT, NOT ITEM OR EQUIP COMPON
 		item = Object(x, y, '[', name, libtcod.light_grey, item = item_component, equipment=equipment_component)
 	elif name == 'goat leather sandals':
 		item_component = Item(weight = 2, depth_level = 2)
-		equipment_component = Equipment(slot='left hand', dodge_bonus = 2)
+		equipment_component = Equipment(slot='boots', dodge_bonus = 2)
 		item = Object(x, y, '[', name, libtcod.dark_sepia, item = item_component, equipment=equipment_component)
 
 
@@ -1202,11 +1242,11 @@ def generate_item(name, x, y): #RETURNS HIGHEST OBJECT, NOT ITEM OR EQUIP COMPON
 
 def generate_monster(name, x, y):
 	if name == 'crazed mutt':
-		fighter_component = Fighter(hp = 10, armor = 0, power = 5, xp = 10, death_function = monster_death)
+		fighter_component = Fighter(hp = 10, armor = 0, power = 4, xp = 10, death_function = monster_death)
 		ai_component = DumbMonster()
 		monster = Object(x, y, 'd', name, libtcod.lighter_red, blocks = True, fighter = fighter_component, ai = ai_component)
 	elif name == 'mad hermit':
-		fighter_component = Fighter(hp = 15, armor = 1, power = 7, xp = 25, death_function = monster_death)
+		fighter_component = Fighter(hp = 15, armor = 1, power = 6, xp = 25, death_function = monster_death)
 		ai_component = DumbMonster()
 		monster = Object(x, y, 'h', name, libtcod.lighter_red, blocks = True, fighter = fighter_component, ai = ai_component)
 
@@ -1241,10 +1281,12 @@ def is_blocked(x,y):
 	return False
 
 def product(iterable):
-	p= 1
-	for n in iterable:
-		p *= n
-	return p
+	if hasattr(iterable, '__iter__'):
+		p = 1
+		for n in iterable:
+			p *= n
+		return p
+	else: return iterable
 
 def player_move_or_attack(dx,dy):
 	global fov_recompute
@@ -1253,9 +1295,9 @@ def player_move_or_attack(dx,dy):
 	y = player.y + dy
 
 	target = None
-	for object in objects:
-		if object.fighter and object.x == x and object.y == y:
-			target = object
+	for obj in objects:
+		if obj.fighter and obj.x == x and obj.y == y:
+			target = obj
 			break
 
 
@@ -1316,26 +1358,30 @@ def initialize_fov():
 		for x in range(MAP_WIDTH):
 			libtcod.map_set_properties(fov_map, x, y, not map[x][y].block_sight, not map[x][y].blocked)
 
+def displayinv():
+	return filter(lambda x: x.equipment not in get_all_equipped(player), inventory)
+
 def inventory_menu(header):
-	if len(inventory) == 0:
+	inv = displayinv()
+
+	if len(inv) == 0:
 		options = ['You have NOTHING!']
 	else:
 		options = []
-		for item in inventory:
-			if item.equipment and not item.equipment.is_equipped:
+		for item in inv:
 				text = item.name
 				options.append(text)
-			elif not item.equipment: options.append(item.name)
 
 	index = menu(header, options, INVENTORY_WIDTH)
 
-	if index is None or len(inventory) == 0: return None
-	return inventory[index].item # RETURNS ITEM - RETURNS ITEM
+	if index is None or len(inv) == 0: return None
+	return inv[index].item # RETURNS ITEM - RETURNS ITEM
 
 def action_equip_menu(header):
 	options = []
 	output_item = []
-	for item in inventory:
+	inv = displayinv()
+	for item in inv:
 		if item.equipment and item.equipment.is_equipped == False:
 			options.append(item.name)
 			output_item.append(item)
@@ -1369,18 +1415,28 @@ def equipment_menu(header):
 
 def textbox(lines): # takes text as a list of (str)lines and displays it
 	width = 0
-	for line in lines:
-		if len(line) > width:
-			width = len(line)
+	if type(lines) is list:
+		for line in lines:
+			if len(line) > width:
+				width = len(line)
+	else:
+		width = len(lines)
 
 	width += 6
 	height = len(lines) + 4
+	if type(lines) is not list:
+		height = 5
+
 	window = libtcod.console_new(width, height)
 
 	y = 2
-	for line in lines:
-		libtcod.console_print_rect_ex(window, 3, y, width, height, libtcod.BKGND_DEFAULT, libtcod.LEFT, line)
-		y += 1
+	if type(lines) is list:
+		for line in lines:
+			libtcod.console_print_rect_ex(window, 3, y, width, height, libtcod.BKGND_DEFAULT, libtcod.LEFT, line)
+			y += 1
+
+	else:
+		libtcod.console_print_rect_ex(window, 1, y, width, height, libtcod.BKGND_DEFAULT, libtcod.LEFT, lines)
 
 	x = SCREEN_WIDTH/2 - width/2
 	y = SCREEN_HEIGHT/2 - height/2
@@ -1558,8 +1614,7 @@ def new_game():
 	initialize_fov()
 
 	game_state = 'playing'
-	item = generate_item('scrap metal sword', 0, 0)
-	inventory = [item]
+	inventory = []
 
 	#create the list of game messages and their colors, starts empty
 	game_msgs = []
@@ -1611,6 +1666,12 @@ def consumable_crudenade():
 		if obj.distance(x, y) <= FIREBALL_RADIUS and obj.fighter:
 			message('The ' + obj.name + ' gets burned for ' + str(FIREBALL_DAMAGE) + ' hit points.', libtcod.orange)
 			obj.fighter.take_damage(FIREBALL_DAMAGE)
+
+
+def pass_node_requirements(node):
+	if node == 'shield focus':
+		if ctree.level >= 1: return True
+	else: return False
 
 
 

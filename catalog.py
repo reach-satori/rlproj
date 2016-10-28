@@ -42,6 +42,9 @@ class SkillNode(object):
 		self.description = description
 		self.parent = parent
 
+	def levelup(self):
+		self.leveled = True
+
 
 
 
@@ -53,10 +56,14 @@ def get_nodetable(treename):
 		SkillNode(name = 'heavy blades', tier = 2, leveled = False, abilities = [],               description = get_node_description('heavy blades'),   parent = ['basic training'])
 		]
 	elif treename == 'tech':
-		nodetable = []
+		nodetable = [
+		SkillNode(name = 'basic training', tier = 1, leveled = False, abilities = [], description = get_node_description('basic training'), parent = [])
+		]
 
 	elif treename == 'ritual':
-		nodetable = []
+		nodetable = [
+		SkillNode(name = 'basic training', tier = 1, leveled = False, abilities = ['kicklaunch'], description = get_node_description('basic training'), parent = [])
+		]
 
 	elif treename == 'perks':
 		nodetable = [
@@ -74,9 +81,7 @@ def get_node_description(node):
 		return['shield bonus, shield slam granted']
 
 
-def pass_node_requirements(node):
-	if node == 'shield focus':
-		return True
+
 
 def ccreation_description(choice):
 	if choice == 'empty':
@@ -142,25 +147,6 @@ def get_item_description(itemname):
 				'Weight: 5']
 
 	return description
-
-def get_item_special(item): #take item's object and returns dictionary with {'special_name':special_value} (special value is 0 if not applicable)
-	specialdict = {}
-	if item.owner.name == 'scrap metal sword':
-		specialdict['str bonus'] = 0.3  # gives item a .str_bonus attribute on equip, which then gets checked at attack in the power property of the fighter
-
-	return specialdict
-	
-	
-	#to clarify how specials work, since it's a mess and i don't know how to make it better:
-	#whenever an item gets equipped, it checks this spot and gets a property added in the apply_special method(called inside equip)
-	#which is in turn used for whatever purpose wherever it's needed by way of me manually adding it
-	#it's gonna be really horrible and give me a headache i'me sure, but i'm new at programmin and don't know how else to do it
-	#I suppose I could make categories for specials, but that's a little restricting and I'm gonna have to open it up again
-	#when I want to make an item do something unique anyway so
-
-	#at least i can catalogue here exactly what each special does and where the code is
-	
-	return specialdict
 
 
 
