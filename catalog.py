@@ -2,21 +2,24 @@ from random import choice
 
 SLOTLIST = ['head', 
 			'hands', 
-			'armour', 
+			'chest', 
 			'right hand', 
 			'left hand', 
 			'amulet', 
 			'left ring', 
 			'right ring', 
-			'backpack', 
-			'boots']
+			'back', 
+			'feet']
+FULL_STATUSEFFECTLIST = ['maim']
 
 FULL_INAMELIST = ['healing salve', 
 				'pipe gun', 
 				'scrap metal sword',
 				'crude grenade',
 				'metal plate',
-				'goat leather sandals']
+				'goat leather sandals',
+				'kitchen knife',
+				'rebar blade']
 
 FULL_RACELIST = ['human',
 				'anime catgirl',
@@ -53,6 +56,7 @@ salve_adjs= ['red',
 			'shining',
 			'swirling',
 			'liquid',
+			'rubbery',
 			'nearly solid',
 			'watery',
 			'vibrant',
@@ -71,6 +75,41 @@ salve_adjs= ['red',
 			'sizzling',
 			'cold',
 			'orange',
+			'moldy'
+			]
+gadget_adjs = ['striped',
+			'plastic',
+			'red',
+			'blue',
+			'green',
+			'brown',
+			'purple',
+			'pink',
+			'yellow',
+			'orange',
+			'rusted',
+			'moldy',
+			'golden',
+			'silvery',
+			'bronze',
+			'shiny',
+			'polished',
+			'old',
+			'decayed',
+			'scratched',
+			'scuffed',
+			'stained',
+			'bent',
+			'dirty',
+			'glossy',
+			'matte',
+			'gleaming',
+			'corroded',
+			'deteriorating',
+			'worn',
+			'rainbow-coloured',
+			'antiquated',
+			'spotless'
 			]
 
 
@@ -110,6 +149,7 @@ def get_nodetable(treename):
 
 	return nodetable
 
+
 def get_node_description(node):
 	if node == 'heavy blades':
 		return ["KICKS THEIR WITH BIG METAL STICK PLACEHOLDER PLACEHOLDER", 'test test test']
@@ -117,6 +157,13 @@ def get_node_description(node):
 		return['you can kill people better with your hands', 'test test test test']
 	elif node == 'shield focus':
 		return['shield bonus, shield slam granted']
+
+def get_status_startfunction(status):
+	pass
+
+def get_status_stepfunction(status):
+	pass
+
 
 
 
@@ -145,6 +192,7 @@ def ccreation_stats(choice):
 	return stats
 
 def random_salve_name(salve):
+	global salve_adjs
 	if 0 < salve.depth_level <= 4:
 		adjnum = 1
 	elif 4 < salve.depth_level <= 9:
@@ -153,9 +201,30 @@ def random_salve_name(salve):
 
 	adjlist = []
 	for index in range(adjnum):
-		adjlist.append(choice(salve_adjs))
+		adj = choice(salve_adjs)
+		adjlist.append(adj)
+		salve_adjs.remove(adj)
 
 	name = 'a ' + ', '.join(adjlist) + ' salve'
+
+	return name
+
+def random_gadget_name(gadget):
+	global gadget_adjs
+	if 0 < gadget.depth_level <= 4:
+		adjnum = 1
+	elif 4 < gadget.depth_level <= 9:
+		adjnum = 2
+	else: adjnum = 3
+
+	adjlist = []
+	for index in range(adjnum):
+		adj = choice(gadget_adjs)
+		adjlist.append(adj)
+		gadget_adjs.remove(adj)
+
+	name = 'a ' + ', '.join(adjlist) + ' ' + choice(['thingamajig', 'doodad', 'doohickey', 'thingamabob', 'gadget', 'device', 'gizmo', 'apparatus', 'contraption', 'widget'])
+
 	return name
 
 
@@ -164,6 +233,7 @@ def random_salve_name(salve):
 		
 
 def get_item_description(item):
+
 	if item.owner.name == 'scrap metal sword':
 		description = [
 					'Scrap metal sword',
@@ -173,40 +243,100 @@ def get_item_description(item):
 					]
 		if item.identified: description + [
 		'',
-		'Damage roll: 2-6',
-		'Strength bonus: 30%%',
-		'Weight: 10'
+		'Damage roll: ' + str(item.base_dmg[0]) + '-' + str(item.base_dmg[1]),
+		'Strength bonus: ' + str(item.special.on_atk_bonus['str bonus']*100) + '%%',
+		'Weight: ' + str(item.weight)
+		]
+
+	elif item.owner.name == 'rebar blade':
+		description = [
+					'Rebar blade',
+					'A massive, thick piece of rebar, with one end sharpened into a blade.',
+					"The other end has a strap of leather tied around it, to protect the wielder's hand.",
+					"Quite heavy. You can't use it with only one hand."
+					]
+		if item.identified: description + [
+		'',
+		'Damage roll: ' + str(item.base_dmg[0]) + '-' + str(item.base_dmg[1]),
+		"Special: This item has a chance to maim on hit, slowing the target's movement speed.",
+		'Strength bonus: ' + str(item.special.on_atk_bonus['str bonus']*100) + '%%',
+		'Weight: ' + str(item.weight)
+		]
+
+	elif item.owner.name == 'kitchen knife':
+		description = [
+					'Kitchen knife',
+					"Ordinary light knife you'd find in any kitchen. This one is sharp and clean.",
+					"Not exactly made for combat, but it'll do the job."
+					]
+		if item.identified: description + [
+		'',
+		'Damage roll: ' + str(item.base_dmg[0]) + '-' + str(item.base_dmg[1]),
+		'Special: This item can multiattack.',
+		'Weight: ' + str(item.weight)
 		]
 
 	elif item.owner.name == 'crude grenade':
-		description = ['Crude grenade',
-				'placeholder']
+		description = [
+		        'Crude grenade',
+				'placeholder'
+				]
 
 	elif item.owner.name == 'healing salve':
-		description = ['Healing salve',
-				'placeholder']
+		description = [
+		        'Healing salve',
+				'placeholder'
+				]
 
 	elif item.owner.name == 'pipe gun':
-		description = ['Pipe gun',
-				'placeholder']
+		description = [
+		        'A crude pipe gun.',
+				'An explosive charge attached to the end of scavenged brass tubing,',
+				'which is filled with nails and metal bits. Good for one use.',
+				'',
+				'Damage: 20',
+				'Range: 6',
+				'Weight: ' + str(item.weight)
+				]
 
 	elif item.owner.name == 'goat leather sandals':
-		description = ['Goat leather sandals.',
+		description = [
+		        'Goat leather sandals.',
 				'Comfortable and better than cow leather, surprisingly.']
 		if item.identified: description + [
 				'',
-				'Dodge bonus: 2',
-				'Weight: 2']
+				'Dodge bonus: ' + str(item.equipment.dodge_bonus),
+				'Weight: ' + str(item.weight)
+				]
 
 	elif item.owner.name == 'metal plate':
-		description = ['Strapped metal plate.',
+		description = [
+		        'Strapped metal plate.',
 				'A mishapen piece of flat metal with a strap, to hold on to.',
-				'Will serve as a shield, for now.']
+				'Will serve well enough as a shield, for now.']
 		if item.identified: description + [
 				'',
-				'Armor bonus: 3',
-				'Dodge bonus: 2',
-				'Weight: 5']
+				'Armor bonus: ' + str(item.equipment.armor_bonus),
+				'Dodge bonus: ' + str(item.equipment.dodge_bonus),
+				'Weight: ' + str(item.weight)
+				]
+
+
+
+
+	if item.itemtype == 'salve' and not item.identified:
+		description = [
+		        'An unknown salve.',
+				'A strange gel-like substance inside a container.',
+				'Who knows what it could do?'
+				]
+
+	if item.itemtype == 'gadget' and not item.identified:
+		description = [
+		        'An unknown gadget.',
+				'Some kind of machine or tool, currently beyond your understanding.',
+				'Who knows what it could do?'
+				] 
 
 	return description
 

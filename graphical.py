@@ -36,48 +36,48 @@ def lerp(start, end, t):
 
 
 def points_to_conpoints(p1, p2):
-	newp1 = p1
-	newp2 = p2
-
-	dx = abs(p1.x - p2.x)
-	dy = abs(p1.y - p2.y)
-	minx = min(p1.x, p2.x)
-	maxx = max(p1.x, p2.x)
-	miny = min(p1.y, p2.y)
-	maxy = max(p1.y, p2.y)
-
-	for point in (newp1,newp2):
-		if point.x == minx: point.x = 0
-		if point.y == miny: point.y = 0
-		if point.x == maxx: point.x = dx
-		if point.y == maxy: point.y = dy
-
+	newp1 = p1                            #
+	newp2 = p2                            #
+#                                         #
+	dx = abs(p1.x - p2.x)                 #
+	dy = abs(p1.y - p2.y)                 #
+	minx = min(p1.x, p2.x)                #
+	maxx = max(p1.x, p2.x)                #   this function maps any 2 points to extremum points in a separate grid
+	miny = min(p1.y, p2.y)                #   kind of like removing a rectangular section defined by 2 diagonal points, setting the top left to 0,0 and then returning
+	maxy = max(p1.y, p2.y)                #   the new coordinates
+#                                         #   this is necessary because i'm using separate consoles to draw graphical effects, which makes things a lot easier
+	for point in (newp1,newp2):           #
+		if point.x == minx: point.x = 0   #   the effect is that the graphical effect that needs to be drawn and its size are known, but not where it should be drawn in the root console
+		if point.y == miny: point.y = 0   #   that will be determined in another module and not here (because I don't know how to fuck with that stuff(yet))
+		if point.x == maxx: point.x = dx  #
+		if point.y == maxy: point.y = dy  #
+#                                         #
 
 
 	return (newp1, newp2)
 
 
 
-def determine_projchar(p1, p2):
-	if p1.y == p2.y: return '-'
-	elif p1.x == p2.x: return '|'
-	elif p1.y > p2.y:
-		lower = p1
-		upper = p2
-	elif p2.y > p1.y: 
-		lower = p2
-		upper = p1
-
-	dy = lower.y - upper.y
-	dx = lower.x - upper.x
-	dist = hypot(dx, dy)
-	theta = acos(float(dx/dist)) * 180 / pi
-
-	if 160 <= theta < 180 or 0 < theta <= 20: return '-'
-	elif 110 <= theta < 160: return '/'
-	elif 70 <= theta < 110: return '|'
-	else: return '\\'
-
+def determine_projchar(p1, p2):                         #                                         
+	if p1.y == p2.y: return '-'                         #                                         
+	elif p1.x == p2.x: return '|'                       #                                       
+	elif p1.y > p2.y:                                   #                     t           t       
+		lower = p1                                      #                     |          /           
+		upper = p2                                      #                     |   "|"   /            
+	elif p2.y > p1.y:                                   #                     | 20 deg /             
+		lower = p2                                      #                     |       /              
+		upper = p1                                      #                     |      /     "/"       
+#                                                       #                     |     /    50 deg      
+	dy = lower.y - upper.y                              #                     |    /                 
+	dx = lower.x - upper.x                              #           idem      |   /          ___---t      
+	dist = hypot(dx, dy)                                #                     |  /     __----             
+	theta = acos(float(dx/dist)) * 180 / pi             #                     | / ___--     20 deg "-" 
+#                                                       #     ________________o---________________t
+	if 160 <= theta < 180 or 0 < theta <= 20: return '-'#
+	elif 110 <= theta < 160: return '/'                 #    takes point with bigger y as lower than does acos to find angle
+	elif 70 <= theta < 110: return '|'                  #
+	else: return '\\'                                   #
+#                                                       #
 
 
 
