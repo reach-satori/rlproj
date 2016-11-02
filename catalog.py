@@ -258,7 +258,7 @@ def get_item_description(item):
 		if item.identified: description + [
 		'',
 		'Damage roll: ' + str(item.base_dmg[0]) + '-' + str(item.base_dmg[1]),
-		"Special: This item has a chance to maim on hit, slowing the target's movement speed.",
+		"Special: This item has a chance to maim on hit, severely impairing the target's movement.",
 		'Strength bonus: ' + str(item.special.on_atk_bonus['str bonus']*100) + '%%',
 		'Weight: ' + str(item.weight)
 		]

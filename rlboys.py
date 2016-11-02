@@ -14,8 +14,13 @@ SCREEN_HEIGHT = 60
 
 
 #map size
-MAP_WIDTH = 80
-MAP_HEIGHT = 50
+MAP_WIDTH = 160
+MAP_HEIGHT = 150
+
+CAMERA_WIDTH = 80
+CAMERA_HEIGHT = 50
+FREEMOVE_WIDTH = 15
+FREEMOVE_HEIGHT = 10
 
 #GUI parameters
 BAR_WIDTH = 20
@@ -73,7 +78,7 @@ class SkillTree:
 	def get_available_nodes(self):
 		available_nodes = []
 		for node in self.nodetable:
-			if (node.parent == [] or node.parent == '' or self.check_if_node_leveled(node.parent)) and node.leveled == False: 
+			if (node.parent == [] or node.parent == '' or self.check_if_node_leveled(node.parent)) and not node.leveled: 
 				available_nodes.append(node)
 		if available_nodes == []: textbox('No nodes to select.')
 		else: return available_nodes
@@ -153,7 +158,7 @@ class SkillTree:
 class PerkTree(SkillTree):
 	def get_available_nodes(self):
 		for node in self.nodetable:
-				if pass_perk_requirements(node) and (node.parent == [] or node.parent == '' or self.check_if_node_leveled(node.parent)) and node.leveled == False: 
+				if pass_perk_requirements(node) and (node.parent == [] or node.parent == '' or self.check_if_node_leveled(node.parent)) and not node.leveled: 
 					available_nodes.append(node)
 		if available_nodes == []: textbox('No nodes to select.')
 		else: return available_nodes
@@ -295,19 +300,21 @@ class EqSpecial:
 				if bonus == 'maim chance':
 					if libtcod.random_get_float(0,0,1) <= self.on_atk_bonus['maim chance']:
 						target.fighter.receive_status('maim', 30)
+						message('Your attack maims the enemy!', libtcod.light_blue)
 
 
 		return bonusdmg
 
 
 class Equipment:
-	def __init__(self, slot, base_dmg = [0,0], armor_bonus = 0, dodge_bonus = 0, special = EqSpecial()):
+	def __init__(self, slot, base_dmg = [0,0], armor_bonus = 0, dodge_bonus = 0, special = EqSpecial(), twohand = False):
 		self.slot = slot
 		self.is_equipped = False
 		self.base_dmg = base_dmg
 		self.dodge_bonus = dodge_bonus
 		self.armor_bonus = armor_bonus
 		self.special = special
+		self.twohand = twohand
 
 		if self.special:
 			self.special.owner = self
@@ -315,6 +322,10 @@ class Equipment:
 	def equip(self,equipper):
 		#equip object and show a message about it
 		if equipper == 'player':
+			if self.twohand and get_equipped_in_slot('left hand'): 
+				message("The " + self.owner.name + ' requires both hands to use.')
+				return
+				
 			if get_equipped_in_slot(self.slot): get_equipped_in_slot(self.slot).unequip()
 			self.is_equipped = True
 			message('Equipped ' + self.owner.item.dname + ' on your ' + self.slot + '.', libtcod.light_green)
@@ -337,7 +348,7 @@ class Equipment:
 			return 'unequip'
 
 		elif index == 2: #drop (and unequip)
-			self.unequip()
+			self.unequip() # this is redundant because it's in the item drop method but i'm gonna leave it here, just in case
 			self.owner.item.drop()
 			return 'drop'
 
@@ -427,7 +438,7 @@ class Item:
 				else: unidname = namekeeper[self.owner.name]
 			return unidname
 
-class StatusEffect(object):
+class StatusEffect(object): #TODO: STACKING BEHAVIOUR FOR STATUS EFFECTS
 	def __init__(self, name, duration, owner):
 		self.name = name
 		self.duration = duration
@@ -435,8 +446,8 @@ class StatusEffect(object):
 		self.owner = owner
 		self.stepfunction = catalog.get_status_stepfunction(self)
 
-		func = catalog.get_status_startfunction(self)
-		if func: func(owner)
+		startfunc = catalog.get_status_startfunction(self)
+		if startfunc: startfunc(owner)
 
 	def activate(self):
 		if self.duration == 0:
@@ -599,12 +610,15 @@ class DumbMonster:  # basic AI
 
 
 
+
+
 class Rect:
 	def __init__(self, x, y, w, h):
 		self.x1 = x
 		self.y1 = y
 		self.x2 = x+w
 		self.y2 = y+h
+
 
 	def center(self):
 		center_x = (self.x1+self.x2)/2
@@ -615,13 +629,112 @@ class Rect:
 		return (self.x1 <= other.x2 and self.x2 >= other.x1 and self.y1 <= self.y2 and self.y2 >= other.y1)
 		#check if rectangle intersects with another one
 
+class Camera(object):
+	def __init__(self, w = CAMERA_WIDTH, h = CAMERA_HEIGHT, x=0, y=0):
+		self.width = w
+		self.height = h
+		self.x = x
+		self.y = y
+
+	def reset_position(self, coord = 'both'):
+
+		if coord == 'xreset' or coord == 'both': self.x = player.x - self.width/2 # less than 0 type errors get handled by setter properties
+		if coord == 'yreset' or coord == 'both': self.y = player.y - self.height/2 # centers camera on player
+		libtcod.console_clear(con)
+
+
+
+	def check_for_posreset(self, xdiff = FREEMOVE_WIDTH, ydiff = FREEMOVE_HEIGHT):
+		centerx, centery = self.center
+		if (player.x > centerx + xdiff or player.x < centerx - xdiff) and (player.y > centery + ydiff or player.y < centery - ydiff): #the ugliest code
+			return 'both'
+
+		if player.x > centerx + xdiff: return 'xreset'
+		elif player.x < centerx - xdiff: return 'xreset'
+
+		if player.y > centery + ydiff: return 'yreset'
+		elif player.y < centery - ydiff: return 'yreset'
+
+		return False
+
+	def camera_render(self):
+		if self.check_for_posreset(): self.reset_position(self.check_for_posreset())
+
+		for y in range(self.height): #x, y are internal camera coords
+			mapy = self.y + y
+			for x in range(self.width):
+				mapx = self.x + x
+
+				visible = libtcod.map_is_in_fov(fov_map, mapx, mapy)
+				wall = map[mapx][mapy].block_sight
+				special = map[mapx][mapy].special
+				if not visible:
+					if map[mapx][mapy].explored:
+						if wall:
+							libtcod.console_put_char_ex(con, x, y, '#', color_dark_wall, libtcod.black)
+						else:
+							libtcod.console_put_char_ex(con, x, y, '.', color_dark_ground, libtcod.black)
+						if special and wall:
+							libtcod.console_put_char_ex(con, x, y, special.char, color_dark_wall, libtcod.black)
+						elif special and not wall:
+							libtcod.console_put_char_ex(con, x, y, special.char, color_dark_ground, libtcod.black)
+
+				else: #it's visible
+					if wall:
+						libtcod.console_put_char_ex(con, x, y, '#', color_light_wall, libtcod.black)
+					else:
+						libtcod.console_put_char_ex(con, x, y, '.', color_light_ground, libtcod.black)
+					if special:
+						libtcod.console_put_char_ex(con, x, y, special.char, special.foreground, special.background)
+					map[mapx][mapy].explored = True
+
+
+	@property
+	def center(self):
+		centerx = self.x + self.width/2
+		centery = self.y + self.height/2
+		return centerx, centery
+
+	@property
+	def x(self):
+		return self._x
+
+	@property
+	def y(self):
+		return self._y
+
+	@property
+	def x2(self):
+	    return self.x + self.width
+
+	@property
+	def y2(self):
+	    return self.y + self.height
+	
+	
+
+
+	
+	@x.setter
+	def x(self, value):
+		if value < 0: value = 0
+		if value > MAP_WIDTH - self.width: value = MAP_WIDTH - self.width
+		self._x = value
+
+	@y.setter
+	def y(self, value):
+		if value < 0: value = 0
+		if value > MAP_HEIGHT - self.height: value = MAP_HEIGHT - self.height
+		self._y = value
+
+
 class SpTile:
 	def __init__(self, char = None, foreground = None, background = None, onwalk_effect = None):# 
 		self.char = char                                                                        # 
 		self.foreground = foreground                                                            # 
 		self.background = background                                                            # 
 		self.onwalk_effect = onwalk_effect                                                      # sptile is a component, similar to how equipment, items, fighter etc works
-#                                                                                                # added to Tile
+#                                                                                               # added to Tile
 	def apply_onwalk(self, walker):                                                             # 
 		if self.onwalk_effect and walker.fighter:                                               # 
 			for effect in self.onwalk_effect:                                                   # 
@@ -722,7 +835,9 @@ class GameObj:
 			map[self.x][self.y].special.apply_onwalk(self)
 
 
-
+	def in_camera(self):
+		if camera.x <= self.x <= camera.x2 and camera.y <= self.y <= camera.y2: return True
+		else: return False
 
 
 	def unblocked_move(self, dx, dy):
@@ -732,10 +847,10 @@ class GameObj:
 	def draw(self):
 		if (libtcod.map_is_in_fov(fov_map, self.x, self.y) or self.ignore_fov):
 			libtcod.console_set_default_foreground(con, self.color)
-			libtcod.console_put_char_ex(con, self.x, self.y, self.char, self.color, libtcod.black)
+			libtcod.console_put_char_ex(con, self.camx, self.camy, self.char, self.color, libtcod.black)
 
 	def clear(self):
-		libtcod.console_put_char_ex(con, self.x, self.y, ' ', libtcod.white,libtcod.black)
+		libtcod.console_put_char_ex(con, self.camx, self.camy, ' ', libtcod.white,libtcod.black)
 
 	def move_towards(self, target_x, target_y):
 		#vector from this object to the target, and distance
@@ -789,6 +904,17 @@ class GameObj:
 		if push(self, target, 3): message('The ' + target.name + ' slams into something violently!') 
 			# ABILITY DISTANCE NUMBER
 
+	@property
+	def camx(self):
+		camx = self.x - camera.x
+		return camx
+	@property
+	def camy(self):
+		camy = self.y - camera.y
+		return camy
+	
+	
+
 
 
 
@@ -820,11 +946,11 @@ class Player(GameObj):#player is inherited because it's easier since it has one 
 
 	@property
 	def dodge(self):
-	    dodge = self.stats['agility']
-	    dodge += sum([equip.dodge_bonus for equip in get_all_equipped(player)])
-	    dodgepercentage = self.stats['agility'] * 14 / 100
-	    dodge *= dodgepercentage
-	    return dodge
+		dodge = self.stats['agility']
+		dodge += sum([equip.dodge_bonus for equip in get_all_equipped(player)])
+		dodgepercentage = self.stats['agility'] * 14 / 100
+		dodge *= dodgepercentage
+		return dodge
 	
 	
 
@@ -968,9 +1094,17 @@ def check_lvlup():
 			player.fighter.armor += 1
 
 def get_equipped_in_slot(slot):  #returns the equipment in a slot, or None if it's empty
+
 	for obj in inventory:
 		if obj.equipment and obj.equipment.slot == slot and obj.equipment.is_equipped:
 			return obj.equipment
+
+	if slot == 'left hand':                     #
+		wep = get_equipped_in_slot('right hand')# twohander special case
+		if wep and wep.twohand: return wep      #
+
+
+
 	return None
 
 def get_all_equipped(obj):  #returns a list of equipped items
@@ -1242,36 +1376,37 @@ def render_all():
 		fov_recompute = False
 		libtcod.map_compute_fov(fov_map, player.x, player.y, TORCH_RADIUS, FOV_LIGHT_WALLS, FOV_ALGO)
 
-	for y in range(MAP_HEIGHT):
-		for x in range(MAP_WIDTH):
-			visible = libtcod.map_is_in_fov(fov_map, x, y)
-			wall = map[x][y].block_sight
-			special = map[x][y].special
-			if not visible:
-				if map[x][y].explored:
-					if wall:
-						libtcod.console_put_char_ex(con, x, y, '#', color_dark_wall, libtcod.black)
-					else:
-						libtcod.console_put_char_ex(con, x, y, '.', color_dark_ground, libtcod.black)
-					if special and wall:
-						libtcod.console_put_char_ex(con, x, y, special.char, color_dark_wall, libtcod.black)
-					elif special and not wall:
-						libtcod.console_put_char_ex(con, x, y, special.char, color_dark_ground, libtcod.black)
+	camera.camera_render()
+	# for y in range(MAP_HEIGHT):
+	# 	for x in range(MAP_WIDTH):
+	# 		visible = libtcod.map_is_in_fov(fov_map, x, y)
+	# 		wall = map[x][y].block_sight
+	# 		special = map[x][y].special
+	# 		if not visible:
+	# 			if map[x][y].explored:
+	# 				if wall:
+	# 					libtcod.console_put_char_ex(con, x, y, '#', color_dark_wall, libtcod.black)
+	# 				else:
+	# 					libtcod.console_put_char_ex(con, x, y, '.', color_dark_ground, libtcod.black)
+	# 				if special and wall:
+	# 					libtcod.console_put_char_ex(con, x, y, special.char, color_dark_wall, libtcod.black)
+	# 				elif special and not wall:
+	# 					libtcod.console_put_char_ex(con, x, y, special.char, color_dark_ground, libtcod.black)
 
-			else: #it's visible
-				if wall:
-					libtcod.console_put_char_ex(con, x, y, '#', color_light_wall, libtcod.black)
-				else:
-					libtcod.console_put_char_ex(con, x, y, '.', color_light_ground, libtcod.black)
-				if special:
-					libtcod.console_put_char_ex(con, x, y, special.char, special.foreground, special.background)
+	# 		else: #it's visible
+	# 			if wall:
+	# 				libtcod.console_put_char_ex(con, x, y, '#', color_light_wall, libtcod.black)
+	# 			else:
+	# 				libtcod.console_put_char_ex(con, x, y, '.', color_light_ground, libtcod.black)
+	# 			if special:
+	# 				libtcod.console_put_char_ex(con, x, y, special.char, special.foreground, special.background)
 
-
-				map[x][y].explored = True
+#old code, mostly copypasted inside scrolling camera
+				
 
 
 	for obj in objects:
-		obj.draw()
+		if obj.in_camera(): obj.draw()
 
 	player.draw()
 	for obj in objects:
@@ -1297,7 +1432,7 @@ def render_all():
 	#blits the content of the 'panel' console to the root console
 	libtcod.console_blit(panel, 0, 0, SCREEN_WIDTH, PANEL_HEIGHT, 0, 0, PANEL_Y)
 
-def clear_screen():
+def clear_screen(): #this is slow, usually you will want libtcod.console_clear instead
 	clearer = libtcod.console_new(SCREEN_WIDTH, SCREEN_HEIGHT)
 	for y in range(SCREEN_HEIGHT):
 		for x in range(SCREEN_WIDTH):
@@ -1376,8 +1511,8 @@ def generate_item(name, x, y): #RETURNS HIGHEST OBJECT, NOT ITEM OR EQUIP COMPON
 		item = GameObj(x, y, '/', name, libtcod.desaturated_blue, item = item_component, equipment = equipment_component)
 	elif name == 'rebar blade':
 		item_component = Item(weight = 20, depth_level = 1,itemtype = 'heavy blade')
-		special_component = EqSpecial(on_atk_bonus = {'str bonus':0.5, 'maim chance': 1})
-		equipment_component = Equipment(slot = 'right hand', base_dmg = [10,13], special = special_component)
+		special_component = EqSpecial(on_atk_bonus = {'str bonus':0.4, 'maim chance': 0.4})
+		equipment_component = Equipment(slot = 'right hand', base_dmg = [10,13], special = special_component, twohand = True)
 		item = GameObj(x, y, '/', name, libtcod.darkest_green, item = item_component, equipment = equipment_component)
 	elif name == 'kitchen knife':
 		item_component = Item(weight = 4, depth_level = 2, itemtype = 'light blade')
@@ -1544,7 +1679,7 @@ def action_equip_menu(header):
 	output_item = []
 	inv = displayinv()
 	for item in inv:
-		if item.equipment and item.equipment.is_equipped == False:
+		if item.equipment and not item.equipment.is_equipped:
 			options.append(item.item.dname)
 			output_item.append(item)
 
@@ -1767,7 +1902,7 @@ def clear_game():
 	clear_screen()
 
 def new_game():
-	global player, game_msgs, game_state, inventory, dungeon_level, namekeeper, colorkeeper
+	global player, game_msgs, game_state, inventory, dungeon_level, namekeeper, colorkeeper, camera
 
 	player = Player()
 	dungeon_level = 1
@@ -1777,6 +1912,9 @@ def new_game():
 	game_msgs = []
 
 	make_map()
+
+	camera = Camera()
+
 	initialize_fov()
 
 	game_state = 'playing'
