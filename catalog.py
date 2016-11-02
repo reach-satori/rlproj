@@ -10,7 +10,9 @@ SLOTLIST = ['head',
 			'right ring', 
 			'back', 
 			'feet']
+
 FULL_STATUSEFFECTLIST = ['maim']
+
 
 FULL_INAMELIST = ['healing salve', 
 				'pipe gun', 

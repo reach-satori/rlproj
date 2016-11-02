@@ -6,7 +6,14 @@ import catalog
 import graphical
 from random import gauss, uniform
 
-
+#TODO: big todos:
+#TODO: Graphical effects(floating text, floating numbers maybe, blood, buff effects)
+#TODO: map generation
+#TODO: some actual interesting enemies, AI
+#TODO: staves, ranged weapons, polearms, cudgels
+#TODO: more weapons, more enemies, more consumables
+#TODO: fill out skill, perk trees
+#TODO: subskill system***
 
 #window size
 SCREEN_WIDTH = 120
@@ -14,8 +21,8 @@ SCREEN_HEIGHT = 60
 
 
 #map size
-MAP_WIDTH = 160
-MAP_HEIGHT = 150
+MAP_WIDTH = 80
+MAP_HEIGHT = 50
 
 CAMERA_WIDTH = 80
 CAMERA_HEIGHT = 50
@@ -104,7 +111,7 @@ class SkillTree:
 		options = self.get_available_nodes()
 		letter_index = ord('a')
 		y=2
-		libtcod.console_print_frame(skillbox,0, 0, width, height, clear=False, flag=libtcod.BKGND_DEFAULT)
+		libtcod.console_print_frame(skillbox,0, 0, width, height, clear=False, flag=libtcod.BKGND_DEFAULT) #god i hate making menus
 
 		for node in options:
 			text = ' ' + chr(letter_index) +'  -  ' + node.name
@@ -439,15 +446,17 @@ class Item:
 			return unidname
 
 class StatusEffect(object): #TODO: STACKING BEHAVIOUR FOR STATUS EFFECTS
-	def __init__(self, name, duration, owner):
+	def __init__(self, name, duration, affected):
 		self.name = name
 		self.duration = duration
 		if duration == 0: self.duration = -1
-		self.owner = owner
+		self.affected = affected
 		self.stepfunction = catalog.get_status_stepfunction(self)
 
 		startfunc = catalog.get_status_startfunction(self)
-		if startfunc: startfunc(owner)
+		if startfunc: startfunc(affected)
+
+		graphical.FloatingText(affected.owner, self.name.capitalize(), libtcod.violet)
 
 	def activate(self):
 		if self.duration == 0:
@@ -470,6 +479,8 @@ class Fighter:
 		self.xp = xp
 		self.state = 'normal'
 		self.status = []
+
+		self.dodge = 0 # enemies don't usually dodge atm, so this is a hacky fix to make monsters able to attack other monsters
 
 
 	def take_damage(self,damage):
@@ -499,6 +510,7 @@ class Fighter:
 						damage.add(equip.special.apply_on_atk_bonus(self.owner, target))
 				finaldmg = damage.resolve()
 				finaldmg -= target.fighter.armor
+
 				if finaldmg > 0:
 					message('You attack the ' + target.name + ' for ' + str(int(round(finaldmg))) + ' hit points.')
 					target.fighter.take_damage(finaldmg)
@@ -526,7 +538,7 @@ class Fighter:
 		if self.owner is player:
 
 			equipments = get_all_equipped(self.owner)
-			flat_bonus = 0
+			flat_bonus = 3
 			equiproll = 0
 			multiplicative_component = 0
 			for equip in equipments: 
@@ -564,7 +576,7 @@ def get_multiattack_number():
 	else: return int(math.ceil(attackn))                          # exemple: if attackn == 3.4, it does 3 attacks always and has a 40% chance of doing an additional attack for a total of 4
 
 class Dmg:
-	def __init__(self, multiplicative, multiplier = 1, flat = 1):
+	def __init__(self, multiplicative, multiplier = 1, flat = 0):
 		self.multiplicative = multiplicative
 		self.multiplier = multiplier
 		self.flat = flat
@@ -638,7 +650,7 @@ class Camera(object):
 
 	def reset_position(self, coord = 'both'):
 
-		if coord == 'xreset' or coord == 'both': self.x = player.x - self.width/2 # less than 0 type errors get handled by setter properties
+		if coord == 'xreset' or coord == 'both': self.x = player.x - self.width/2 # less than 0 type errors get dont happen because of setter properties
 		if coord == 'yreset' or coord == 'both': self.y = player.y - self.height/2 # centers camera on player
 		libtcod.console_clear(con)
 
@@ -661,10 +673,10 @@ class Camera(object):
 	def camera_render(self):
 		if self.check_for_posreset(): self.reset_position(self.check_for_posreset())
 
-		for y in range(self.height): #x, y are internal camera coords
-			mapy = self.y + y
-			for x in range(self.width):
-				mapx = self.x + x
+		for camy in range(self.height):
+			mapy = self.y + camy
+			for camx in range(self.width):
+				mapx = self.x + camx
 
 				visible = libtcod.map_is_in_fov(fov_map, mapx, mapy)
 				wall = map[mapx][mapy].block_sight
@@ -672,21 +684,21 @@ class Camera(object):
 				if not visible:
 					if map[mapx][mapy].explored:
 						if wall:
-							libtcod.console_put_char_ex(con, x, y, '#', color_dark_wall, libtcod.black)           #
+							libtcod.console_put_char_ex(con, camx, camy, '#', color_dark_wall, libtcod.black)           #
 						else:                                                                                     #
-							libtcod.console_put_char_ex(con, x, y, '.', color_dark_ground, libtcod.black)         # OK this looks bad but it's quite simple actually, i'm sure it could be written more elegantly with abs or something
+							libtcod.console_put_char_ex(con, camx, camy, '.', color_dark_ground, libtcod.black)         # OK this looks bad but it's quite simple actually, i'm sure it could be written more elegantly with abs or something
 						if special and wall:                                                                      # basically there are 3 nested rectangles: the biggest beingthe actual map where objects interact and the game happens, the second is the camera, which gets rendered to con in camera_render method
-							libtcod.console_put_char_ex(con, x, y, special.char, color_dark_wall, libtcod.black)  # the third is a phantom FREEMOVE square which is checked in check_for_posreset and all it does is center the camera position (separately for x and y) when the player walks outside of it
+							libtcod.console_put_char_ex(con, camx, camy, special.char, color_dark_wall, libtcod.black)  # the third is a phantom FREEMOVE square which is checked in check_for_posreset and all it does is center the camera position (separately for x and y) when the player walks outside of it
 						elif special and not wall:                                                                 #most of the complexity is just in juggling coordinates between camera and map, but it more or less comes down to : 
-							libtcod.console_put_char_ex(con, x, y, special.char, color_dark_ground, libtcod.black) #mapcoord = camera_origin_coord + current_camera_coord: that's those mapx and mapy variables. if it's still hard try drawing it out
+							libtcod.console_put_char_ex(con, camx, camy, special.char, color_dark_ground, libtcod.black) #mapcoord = camera_origin_coord + current_camera_coord: that's those mapx and mapy variables. if it's still hard try drawing it out
 
 				else: #it's visible
 					if wall:
-						libtcod.console_put_char_ex(con, x, y, '#', color_light_wall, libtcod.black)
+						libtcod.console_put_char_ex(con, camx, camy, '#', color_light_wall, libtcod.black)
 					else:
-						libtcod.console_put_char_ex(con, x, y, '.', color_light_ground, libtcod.black)
+						libtcod.console_put_char_ex(con, camx, camy, '.', color_light_ground, libtcod.black)
 					if special:
-						libtcod.console_put_char_ex(con, x, y, special.char, special.foreground, special.background)
+						libtcod.console_put_char_ex(con, camx, camy, special.char, special.foreground, special.background)
 					map[mapx][mapy].explored = True
 
 
@@ -891,11 +903,12 @@ class GameObj:
 
 	def abl_kicklaunch(self):
 		target = random_adj_target()
-		dx, dy = get_increments(self, target)
-
 		if target == None:
 			message('Nobody to kick!')
 			return
+		dx, dy = get_increments(self, target)
+
+
 
 		dmg = self.fighter.power(multipliers = [0.5])
 		dmg = dmg.resolve()
@@ -903,7 +916,7 @@ class GameObj:
 		message('You put all your strength behind a mighty kick, dealing ' + str(int(round(dmg))) + ' damage.', libtcod.light_red)
 		
 		if push(self, target, 3): message('The ' + target.name + ' slams into something violently!') 
-			# ABILITY DISTANCE NUMBER
+	# 		# ABILITY DISTANCE NUMBER
 
 	@property
 	def camx(self):
@@ -1073,7 +1086,7 @@ def play_game():
 			break
 
 def check_lvlup():
-	lvlup_xp = LEVEL_UP_BASE + (player.lvl * LEVEL_UP_FACTOR)
+	lvlup_xp = LEVEL_UP_BASE + (player.lvl * LEVEL_UP_FACTOR) #bug: dying in the same frame you level up
 	if player.fighter.xp >= lvlup_xp:
 		player.lvl += 1
 		player.fighter.xp -= lvlup_xp
@@ -1119,7 +1132,7 @@ def get_all_equipped(obj):  #returns a list of equipped items
 		return []  #other objects have no equipment
 
 def next_level():
-	global dungeon_level, con
+	global dungeon_level
 	dungeon_level += 1
 	message('You descend further into the bowels of the earth.', libtcod.dark_violet)
 	make_map()
@@ -1311,7 +1324,7 @@ def make_map():
 	place_items_in_level()
 
 def create_item_rngtable(depth_level = 1): # this gonna get modified to shit before this is over
-	output_items = []					# returns list of (OBJECT)items to spawn in a dungeon level by calling get_random_item on a normal distribution of depthlevels
+	output_items = []					# returns list of (OBJECT)items to spawn by calling get_random_item on a normal distribution of depthlevels
 	mean_items = 7 + depth_level  * 3
 
 	maxdepth = 1
@@ -1378,6 +1391,8 @@ def render_all():
 		libtcod.map_compute_fov(fov_map, player.x, player.y, TORCH_RADIUS, FOV_LIGHT_WALLS, FOV_ALGO)
 
 	camera.camera_render()
+	
+
 	# for y in range(MAP_HEIGHT):
 	# 	for x in range(MAP_WIDTH):
 	# 		visible = libtcod.map_is_in_fov(fov_map, x, y)
@@ -1415,6 +1430,7 @@ def render_all():
 
 	#blits the content of the 'con' console to the root console
 	libtcod.console_blit(con, 0, 0, MAP_WIDTH, MAP_HEIGHT, 0, 0, 0)
+	graphical.render_effects()
 
 
 	libtcod.console_set_default_background(panel, libtcod.black)
@@ -1521,7 +1537,7 @@ def generate_item(name, x, y): #RETURNS HIGHEST OBJECT, NOT ITEM OR EQUIP COMPON
 		equipment_component = Equipment(slot='right hand', base_dmg = [3,4], special = special_component)
 		item = GameObj(x, y, '/', name, libtcod.darker_sepia, item = item_component, ignore_fov = True, equipment = equipment_component)
 	elif name == 'metal plate':
-		item_component = Item(weight = 5, depth_level = 2)
+		item_component = Item(weight = 5, depth_level = 2)#weapons need itemtype, but armor can just get a slot check
 		equipment_component = Equipment(slot='left hand', armor_bonus = 3, dodge_bonus = 2)
 		item = GameObj(x, y, '[', name, libtcod.light_grey, item = item_component, equipment = equipment_component)
 	elif name == 'goat leather sandals':
@@ -1908,6 +1924,7 @@ def new_game():
 	player = Player()
 	dungeon_level = 1
 	colorkeeper = {}
+	
 	inventory = []
 	namekeeper = {}
 	game_msgs = []
@@ -1919,6 +1936,9 @@ def new_game():
 	initialize_fov()
 
 	game_state = 'playing'
+
+	item = generate_item('pipe gun', 0, 0)
+	inventory.append(item)
 
 
 	
@@ -1958,24 +1978,21 @@ def pot_heal():
 	message('Your wounds start to feel better.')
 	player.fighter.heal(POTHEAL_AMOUNT)
 
-def draw_laser(origin, end, char, color):
-	line = graphical.createline(origin, end)
+# def draw_laser(origin, end, char, color): #origin and end must be GameObj(or otherwise also have camx, camy attributes)
+# 	line = graphical.createline(origin, end)
 
-	linecon = console_from_twopts(origin, end)
-	libtcod.console_set_default_foreground(linecon, color)
-	for point in line:
-		libtcod.console_put_char(linecon,int(point.x), int(point.y), char, libtcod.BKGND_NONE)
+# 	linecon = graphical.console_from_twopts(origin, end)
+# 	libtcod.console_set_default_foreground(linecon, color)
+# 	for point in line:
+# 		libtcod.console_put_char(linecon,int(point.x), int(point.y), char, libtcod.BKGND_NONE)
 
-	libtcod.console_blit(linecon, 0, 0, 0, 0, 0, min(origin.x, end.x), min(origin.y, end.y), 1, 0)
-	libtcod.console_flush()
+# 	libtcod.console_blit(linecon, 0, 0, 0, 0, 0, min(origin.camx, end.camx), min(origin.camy, end.camy), 1, 0)
+# 	libtcod.console_flush()
 
-	libtcod.sys_sleep_milli(50)
+# 	libtcod.sys_sleep_milli(50)
 
-def console_from_twopts(origin, end):
-	width = abs(max(origin.x, end.x) - min(origin.x, end.x)) + 1
-	height = abs(max(origin.y, end.y) - min(origin.y, end.y)) + 1
+#OLD CODE: This functionality has been transferred to the graphical module
 
-	return libtcod.console_new(width, height)
 
 def consumable_pipegun():
 	monster = target_monster(6)
@@ -1983,18 +2000,24 @@ def consumable_pipegun():
 		return 'cancelled'
 	else:
 		message('The slug explodes out of the flimsy gun with a loud thunder and strikes the ' + monster.name + '! The damage is '+ str(LIGHTNING_DAMAGE) + ' hit points.', libtcod.light_blue)
-		draw_laser(player, monster, graphical.determine_projchar(player, monster), libtcod.light_blue)
-		monster.fighter.take_damage(LIGHTNING_DAMAGE)
+		# draw_laser(player, monster, graphical.determine_projchar(player, monster), libtcod.light_blue)
+		graphical.LineHandler(player, monster, libtcod.light_blue)
+		# lineffect.draw(libtcod.light_blue) #it's in the init method now, not sure if i should keep it there
+
+
+		monster.fighter.take_damage(1)
+		monster.fighter.receive_status('maim', 30)
 		
 
 def consumable_crudenade():
-	(x, y) = target_tile()
+	x, y = target_tile()
 	if x is None: return 'cancelled'
+
 	message('The grenade explodes, spraying everything within ' + str(FIREBALL_RADIUS) + ' tiles with shrapnel!', libtcod.orange)
 
 	for obj in objects:  #damage every fighter in range, including the player
 		if obj.distance(x, y) <= FIREBALL_RADIUS and obj.fighter:
-			message('The ' + obj.name + ' gets burned for ' + str(FIREBALL_DAMAGE) + ' hit points.', libtcod.orange)
+			if libtcod.map_is_in_fov(fov_map, obj.x, obj.y): message('The ' + obj.name + ' gets burned for ' + str(FIREBALL_DAMAGE) + ' hit points.', libtcod.orange)
 			obj.fighter.take_damage(FIREBALL_DAMAGE)
 
 
@@ -2009,7 +2032,7 @@ def pass_node_requirements(node):
 libtcod.console_set_custom_font('terminal10x16_gs_tc.png', libtcod.FONT_TYPE_GREYSCALE | libtcod.FONT_LAYOUT_TCOD)
 libtcod.console_init_root(SCREEN_WIDTH, SCREEN_HEIGHT, 'python/libtcod tutorial', False)
 libtcod.sys_set_fps(LIMIT_FPS)
-con = libtcod.console_new(MAP_WIDTH, MAP_HEIGHT)
+con = libtcod.console_new(CAMERA_WIDTH, CAMERA_HEIGHT)
 panel = libtcod.console_new(SCREEN_WIDTH, PANEL_HEIGHT)
 
 
