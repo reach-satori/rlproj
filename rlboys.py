@@ -649,11 +649,12 @@ class Camera(object):
 		if (player.x > centerx + xdiff or player.x < centerx - xdiff) and (player.y > centery + ydiff or player.y < centery - ydiff): #the ugliest code
 			return 'both'
 
-		if player.x > centerx + xdiff: return 'xreset'
+		if player.x > centerx + xdiff: return 'xreset'  
 		elif player.x < centerx - xdiff: return 'xreset'
-
-		if player.y > centery + ydiff: return 'yreset'
+#                                                       
+		if player.y > centery + ydiff: return 'yreset'  
 		elif player.y < centery - ydiff: return 'yreset'
+                                                        
 
 		return False
 
@@ -671,13 +672,13 @@ class Camera(object):
 				if not visible:
 					if map[mapx][mapy].explored:
 						if wall:
-							libtcod.console_put_char_ex(con, x, y, '#', color_dark_wall, libtcod.black)
-						else:
-							libtcod.console_put_char_ex(con, x, y, '.', color_dark_ground, libtcod.black)
-						if special and wall:
-							libtcod.console_put_char_ex(con, x, y, special.char, color_dark_wall, libtcod.black)
-						elif special and not wall:
-							libtcod.console_put_char_ex(con, x, y, special.char, color_dark_ground, libtcod.black)
+							libtcod.console_put_char_ex(con, x, y, '#', color_dark_wall, libtcod.black)           #
+						else:                                                                                     #
+							libtcod.console_put_char_ex(con, x, y, '.', color_dark_ground, libtcod.black)         # OK this looks bad but it's quite simple actually, i'm sure it could be written more elegantly with abs or something
+						if special and wall:                                                                      # basically there are 3 nested rectangles: the biggest beingthe actual map where objects interact and the game happens, the second is the camera, which gets rendered to con in camera_render method
+							libtcod.console_put_char_ex(con, x, y, special.char, color_dark_wall, libtcod.black)  # the third is a phantom FREEMOVE square which is checked in check_for_posreset and all it does is center the camera position (separately for x and y) when the player walks outside of it
+						elif special and not wall:                                                                 #most of the complexity is just in juggling coordinates between camera and map, but it more or less comes down to : 
+							libtcod.console_put_char_ex(con, x, y, special.char, color_dark_ground, libtcod.black) #mapcoord = camera_origin_coord + current_camera_coord: that's those mapx and mapy variables. if it's still hard try drawing it out
 
 				else: #it's visible
 					if wall:
