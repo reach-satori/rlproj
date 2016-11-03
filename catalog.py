@@ -1,4 +1,6 @@
 from random import choice
+import graphical
+import libtcodpy as libtcod
 
 SLOTLIST = ['head', 
 			'hands', 
@@ -115,6 +117,42 @@ gadget_adjs = ['striped',
 			]
 
 
+class EqSpecial:
+	def __init__(self, owner, enchantlist = []):
+		self.owner = owner
+		self.enchantlist = get_native_enchants(self)
+
+
+
+	
+
+
+
+		
+
+class EnchantModule(object):
+	def __init__(self, owner, name, value, isnative = False, duration = 0):
+		self.isnative = isnative
+		self.owner = owner
+		self.name = name
+		self.value = value
+		self.duration = duration
+		self.typelist = []
+
+
+		self.get_typelist()
+
+	def get_typelist(self):
+		typelist = []
+		if self.name == 'str bonus': 
+			self.typelist.append('on atk bonus')
+		if self.name == 'maim chance':
+			self.typelist.append('on atk bonus')
+			self.typelist.append('status applier')
+
+
+
+
 class SkillNode(object):
 	def __init__(self, name, tier, leveled, abilities, description, parent):
 		self.name = name
@@ -161,12 +199,25 @@ def get_node_description(node):
 		return['shield bonus, shield slam granted']
 
 def get_status_startfunction(status):
-	pass
+	if status.name == 'maim':
+		return graphical.FloatingText(status.affected.owner, status.name, libtcod.violet)
 
 def get_status_stepfunction(status):
 	pass
 
+def get_native_enchants(eqspecial): #must return list of EnchantModule objects
+	nativelist = []
+	#   eqspecial.equipment.gameobj.name
+	if eqspecial.owner.owner.name == "rebar blade":
+		nativelist.append(EnchantModule(eqspecial, 'str bonus', 0.45, True))
+		nativelist.append(EnchantModule(eqspecial, 'maim chance', 0.3, True, duration = 30))
+	elif eqspecial.owner.owner.name == 'scrap metal sword':
+		nativelist.append(EnchantModule(eqspecial, 'str bonus', 0.25, True))
+		nativelist.append(EnchantModule(eqspecial, 'maim chance', 0.25, True, duration = 20))
+	elif eqspecial.owner.owner.name == 'kitchen knife':
+		nativelist.append(EnchantModule(eqspecial, 'multiattack', 0.25, True))
 
+	return nativelist
 
 
 
@@ -232,7 +283,7 @@ def random_gadget_name(gadget):
 
 
 
-		
+
 
 def get_item_description(item):
 
@@ -342,6 +393,3 @@ def get_item_description(item):
 
 	return description
 
-
-
-	

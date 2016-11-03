@@ -7,7 +7,7 @@ import graphical
 from random import gauss, uniform
 
 #TODO: big todos:
-#TODO: Graphical effects(floating text, floating numbers maybe, blood, buff effects)
+#TODO: Graphical effects(floating text, floating numbers maybe, blood, buff effects)##
 #TODO: map generation
 #TODO: some actual interesting enemies, AI
 #TODO: staves, ranged weapons, polearms, cudgels
@@ -294,37 +294,22 @@ class Ccreation:
 
 	
 
-class EqSpecial:
-	def __init__(self, on_atk_bonus = {}):
-		self.on_atk_bonus = on_atk_bonus #here i'm gonna add all every different 'type' of item special. Some will probably change things on attack, some on the character, and so on.
 
-	def apply_on_atk_bonus(self, origin, target):
-		if self.on_atk_bonus:
-			bonusdmg = Dmg(0, 1, 0)
-			for bonus in self.on_atk_bonus:
-				if bonus == 'str bonus':
-					bonusdmg.add(origin.stats['strength'] * self.on_atk_bonus['str bonus'], 1, 0)
-				if bonus == 'maim chance':
-					if libtcod.random_get_float(0,0,1) <= self.on_atk_bonus['maim chance']:
-						target.fighter.receive_status('maim', 30)
-						message('Your attack maims the enemy!', libtcod.light_blue)
-
-
-		return bonusdmg
 
 
 class Equipment:
-	def __init__(self, slot, base_dmg = [0,0], armor_bonus = 0, dodge_bonus = 0, special = EqSpecial(), twohand = False):
+	def __init__(self, owner, slot, base_dmg = [0,0], armor_bonus = 0, dodge_bonus = 0, twohand = False):
 		self.slot = slot
+		self.owner = owner
 		self.is_equipped = False
 		self.base_dmg = base_dmg
 		self.dodge_bonus = dodge_bonus
 		self.armor_bonus = armor_bonus
-		self.special = special
 		self.twohand = twohand
+		self.special = None
 
-		if self.special:
-			self.special.owner = self
+
+		self.add_base_specials()
 
 	def equip(self,equipper):
 		#equip object and show a message about it
@@ -364,11 +349,33 @@ class Equipment:
 		else:
 			return libtcod.random_get_int(0, self.base_dmg[0], self.base_dmg[1])
 
+	def add_base_specials(self):
+		self.special = catalog.EqSpecial(owner = self)
+
+
+	def apply_on_atk_bonus(self, origin, target):
+
+		bonusdmg = Dmg(0, 1, 0)
+		if self.special:
+			for enchant in self.special.enchantlist: #cycles through EnchantModules
+				
+				if enchant.name == 'str bonus':
+					bonusdmg.add(origin.stats['strength'] * enchant.value)
+				elif enchant.name == 'maim chance':
+					if libtcod.random_get_float(0,0,1) <= enchant.value:
+						target.fighter.receive_status('maim', enchant.duration)
+						message('Your attack maims the enemy!', libtcod.light_blue)
+
+		return bonusdmg
+
+
+
 
 
 class Item:
-	def __init__(self, weight = 0, depth_level = 1, use_function = None, itemtype = 'gadget'):
+	def __init__(self, owner, weight = 0, depth_level = 1, use_function = None, itemtype = 'gadget'):
 		self.weight = weight
+		self.owner = owner
 		self.use_function = use_function
 		self.depth_level = depth_level
 		self.identified = False
@@ -454,9 +461,9 @@ class StatusEffect(object): #TODO: STACKING BEHAVIOUR FOR STATUS EFFECTS
 		self.stepfunction = catalog.get_status_stepfunction(self)
 
 		startfunc = catalog.get_status_startfunction(self)
-		if startfunc: startfunc(affected)
+		
 
-		graphical.FloatingText(affected.owner, self.name.capitalize(), libtcod.violet)
+		
 
 	def activate(self):
 		if self.duration == 0:
@@ -465,7 +472,7 @@ class StatusEffect(object): #TODO: STACKING BEHAVIOUR FOR STATUS EFFECTS
 		if self.stepfunction: self.stepfunction()
 
 	def terminate(self):
-		self.owner.status.remove(self)
+		self.affected.status.remove(self)
 
 
 class Fighter:
@@ -506,8 +513,7 @@ class Fighter:
 			for i in range(multiattack):
 				damage = self.power()
 				for equip in get_all_equipped(self.owner):#equivalent to global player
-					if equip.special.on_atk_bonus:
-						damage.add(equip.special.apply_on_atk_bonus(self.owner, target))
+					damage.add(equip.apply_on_atk_bonus(self.owner, target))
 				finaldmg = damage.resolve()
 				finaldmg -= target.fighter.armor
 
@@ -567,8 +573,10 @@ class Fighter:
 def get_multiattack_number():
 	attackn = 0
 	for equip in get_all_equipped(player):
-		if 'multiattack' in equip.special.on_atk_bonus: attackn += equip.special.on_atk_bonus['multiattack']
-		attackn *= player.stats['agility']/5
+		for enchant in equip.special.enchantlist: 
+			if enchant.name == 'multiattack': attackn += enchant.value
+
+	attackn *= player.stats['agility']/5
 	attackn += 1
 ######################
 	if uniform(math.floor(attackn), math.ceil(attackn)) > attackn:#
@@ -764,28 +772,27 @@ class Tile:
 		
 
 
+		
 
-class GameObj:
-	def __init__(self,x, y, char, name, color, blocks = False, fighter = None, ai = None, item = None, ignore_fov = False, equipment = None):
+
+class GameObj(object):
+	def __init__(self, x, y, char, name, color, blocks = False, fighter = None, ai = None, is_item = False, ignore_fov = False, equipment = None, item = None):
 		self.x = x
 		self.y = y
+		self.is_item = is_item
 		self.char = char
 		self.color = color
 		self.blocks = blocks
 		self.name = name
+		self.equipment = equipment
+		self.item = item
 		self.ignore_fov = ignore_fov
 
 
 
+		if self.is_item: self.get_item_components()
 
-		self.equipment = equipment
-		if self.equipment:
-			self.equipment.owner = self
 
-		self.item = item
-		if self.item:
-			self.item.owner = self
-			if self.equipment: self.item.itemtype = 'equipment'
 
 		self.fighter = fighter
 		if self.fighter:
@@ -896,6 +903,39 @@ class GameObj:
 		objects.remove(self)
 		objects.append(self)
 
+	def get_item_components(self):
+		if self.name == 'healing salve':  #only basic stats go here, for special functions and descriptions go to catalog
+			self.item = Item(self, weight = 0.5, depth_level = 2, use_function = pot_heal, itemtype = 'salve')
+			colorchoice = check_colorkeeper(self.name)
+		
+		elif self.name == 'pipe gun':
+			self.item = Item(self, weight = 2, depth_level = 2, use_function = consumable_pipegun, itemtype = 'gadget')
+			colorchoice = check_colorkeeper(self.name)
+
+		elif self.name == 'crude grenade':
+			self.item = Item(self, weight = 1, depth_level = 2, use_function = consumable_crudenade, itemtype = 'gadget')
+			colorchoice = check_colorkeeper(self.name)
+			
+		elif self.name == 'scrap metal sword':
+			self.item = Item(self, weight = 7, depth_level = 2, itemtype = 'heavy blade')
+			self.equipment = Equipment(self, slot='right hand', base_dmg = [5,7])
+			
+		elif self.name == 'rebar blade':
+			self.item = Item(self, weight = 20, depth_level = 1,itemtype = 'heavy blade')
+			self.equipment = Equipment(self, slot = 'right hand', base_dmg = [10,13],  twohand = True)
+			
+		elif self.name == 'kitchen knife':
+			self.item = Item(self, weight = 4, depth_level = 2, itemtype = 'light blade')
+			self.equipment = Equipment(self, slot='right hand', base_dmg = [3,4])
+			
+		elif self.name == 'metal plate':
+			self.item = Item(self, weight = 5, depth_level = 2)#weapons need itemtype, but armor can just get a slot check
+			self.equipment = Equipment(self, slot='left hand', armor_bonus = 3, dodge_bonus = 2)
+			
+		elif self.name == 'goat leather sandals':
+			self.item = Item(self, weight = 2, depth_level = 2)
+			self.equipment = Equipment(self, slot='feet', dodge_bonus = 2)
+
 
 		############################################################################
 		#########################   ABILITY  DEFINITIONS(for player)   #############
@@ -935,7 +975,7 @@ class GameObj:
 class Player(GameObj):#player is inherited because it's easier since it has one instance, but other stuff is usually components
 	def __init__(self, race = 'human', gclass = 'warden', stats = {'strength':5,'constitution':5,'agility':5,'intelligence':5,'attunement':5}, perks = []):
 		fighter_component = Fighter(hp=30, armor = 3, power=3, xp = 0, death_function = player_death) #changed later through ccreation
-		GameObj.__init__(self,0,0, '@', 'player', libtcod.white, blocks = True, fighter = fighter_component)
+		GameObj.__init__(self,0,0, '@', 'player', libtcod.white, blocks = True, is_item = False, fighter = fighter_component)
 		self.race = race #only player-exclusive stats should go here if possible
 		self.gclass = gclass #gclass for game class
 		self.stats = stats
@@ -1249,8 +1289,7 @@ def handle_keys():
 			
 
 
-			# elif key_char == ']':
-			# 	raise ValueError(get_equipped_in_slot('right hand').is_equipped)
+
 
 
 
@@ -1261,6 +1300,9 @@ def handle_keys():
 					next_level()
 				else:
 					message("You can't go down here!")
+
+			elif key_char == ']':
+				raise ValueError(get_equipped_in_slot('right hand').special.enchantlist[0].name,get_equipped_in_slot('right hand').special.enchantlist[1].name )
 
 			elif key_char == 'c':
 				#show character information
@@ -1390,36 +1432,10 @@ def render_all():
 		fov_recompute = False
 		libtcod.map_compute_fov(fov_map, player.x, player.y, TORCH_RADIUS, FOV_LIGHT_WALLS, FOV_ALGO)
 
-	camera.camera_render()
 	
 
-	# for y in range(MAP_HEIGHT):
-	# 	for x in range(MAP_WIDTH):
-	# 		visible = libtcod.map_is_in_fov(fov_map, x, y)
-	# 		wall = map[x][y].block_sight
-	# 		special = map[x][y].special
-	# 		if not visible:
-	# 			if map[x][y].explored:
-	# 				if wall:
-	# 					libtcod.console_put_char_ex(con, x, y, '#', color_dark_wall, libtcod.black)
-	# 				else:
-	# 					libtcod.console_put_char_ex(con, x, y, '.', color_dark_ground, libtcod.black)
-	# 				if special and wall:
-	# 					libtcod.console_put_char_ex(con, x, y, special.char, color_dark_wall, libtcod.black)
-	# 				elif special and not wall:
-	# 					libtcod.console_put_char_ex(con, x, y, special.char, color_dark_ground, libtcod.black)
-
-	# 		else: #it's visible
-	# 			if wall:
-	# 				libtcod.console_put_char_ex(con, x, y, '#', color_light_wall, libtcod.black)
-	# 			else:
-	# 				libtcod.console_put_char_ex(con, x, y, '.', color_light_ground, libtcod.black)
-	# 			if special:
-	# 				libtcod.console_put_char_ex(con, x, y, special.char, special.foreground, special.background)
-
-#old code, mostly copypasted inside scrolling camera
 				
-
+	camera.camera_render()
 
 	for obj in objects:
 		if obj.in_camera(): obj.draw()
@@ -1429,7 +1445,8 @@ def render_all():
 		if obj.name == 'targeter': obj.draw()
 
 	#blits the content of the 'con' console to the root console
-	libtcod.console_blit(con, 0, 0, MAP_WIDTH, MAP_HEIGHT, 0, 0, 0)
+	libtcod.console_blit(con, 0, 0, CAMERA_WIDTH, CAMERA_HEIGHT, 0, 0, 0)
+
 	graphical.render_effects()
 
 
@@ -1510,41 +1527,31 @@ def check_colorkeeper(name):
 
 def generate_item(name, x, y): #RETURNS HIGHEST OBJECT, NOT ITEM OR EQUIP COMPONENT
 	if name == 'healing salve':  #only basic stats go here, for special functions and descriptions go to catalog
-		item_component = Item(weight = 0.5, depth_level = 2, use_function = pot_heal, itemtype = 'salve')
 		colorchoice = check_colorkeeper(name)
-		item = GameObj(x, y, '!', name, colorchoice, None, None, None, item = item_component)
-	elif name == 'pipe gun':
-		item_component = Item(weight = 2, depth_level = 2, use_function = consumable_pipegun, itemtype = 'gadget')
-		colorchoice = check_colorkeeper(name)
-		item = GameObj(x, y, '?', name, colorchoice, None, None, None, item = item_component)
-	elif name == 'crude grenade':
-		item_component = Item(weight = 1, depth_level = 2, use_function = consumable_crudenade, itemtype = 'gadget')
-		colorchoice = check_colorkeeper(name)
-		item = GameObj(x, y, '?', name, colorchoice, None, None, None, item = item_component)
-	elif name == 'scrap metal sword':
-		item_component = Item(weight = 7, depth_level = 2, itemtype = 'heavy blade')
-		special_component = EqSpecial(on_atk_bonus = {'str bonus':0.25, 'maim chance':0.2})
-		equipment_component = Equipment(slot='right hand', base_dmg = [5,7], special = special_component)
-		item = GameObj(x, y, '/', name, libtcod.desaturated_blue, item = item_component, equipment = equipment_component)
-	elif name == 'rebar blade':
-		item_component = Item(weight = 20, depth_level = 1,itemtype = 'heavy blade')
-		special_component = EqSpecial(on_atk_bonus = {'str bonus':0.4, 'maim chance': 0.4})
-		equipment_component = Equipment(slot = 'right hand', base_dmg = [10,13], special = special_component, twohand = True)
-		item = GameObj(x, y, '/', name, libtcod.darkest_green, item = item_component, equipment = equipment_component)
-	elif name == 'kitchen knife':
-		item_component = Item(weight = 4, depth_level = 2, itemtype = 'light blade')
-		special_component = EqSpecial(on_atk_bonus = {'multiattack':0.25})
-		equipment_component = Equipment(slot='right hand', base_dmg = [3,4], special = special_component)
-		item = GameObj(x, y, '/', name, libtcod.darker_sepia, item = item_component, ignore_fov = True, equipment = equipment_component)
-	elif name == 'metal plate':
-		item_component = Item(weight = 5, depth_level = 2)#weapons need itemtype, but armor can just get a slot check
-		equipment_component = Equipment(slot='left hand', armor_bonus = 3, dodge_bonus = 2)
-		item = GameObj(x, y, '[', name, libtcod.light_grey, item = item_component, equipment = equipment_component)
-	elif name == 'goat leather sandals':
-		item_component = Item(weight = 2, depth_level = 2)
-		equipment_component = Equipment(slot='feet', dodge_bonus = 2)
-		item = GameObj(x, y, '[', name, libtcod.lighter_azure, item = item_component, equipment = equipment_component)
+		item = GameObj(x, y, '!', name, colorchoice, None, None, None, is_item = True)
 
+	elif name == 'pipe gun':
+		colorchoice = check_colorkeeper(name)
+		item = GameObj(x, y, '?', name, colorchoice, None, None, None, is_item = True)
+
+	elif name == 'crude grenade':
+		colorchoice = check_colorkeeper(name)
+		item = GameObj(x, y, '?', name, colorchoice, None, None, None, is_item = True)
+
+	elif name == 'scrap metal sword':
+		item = GameObj(x, y, '/', name, libtcod.desaturated_blue, is_item = True)
+
+	elif name == 'rebar blade':
+		item = GameObj(x, y, '/', name, libtcod.darkest_green, is_item = True)
+
+	elif name == 'kitchen knife':
+		item = GameObj(x, y, '/', name, libtcod.darker_sepia, is_item = True, ignore_fov = True)
+
+	elif name == 'metal plate':
+		item = GameObj(x, y, '[', name, libtcod.light_grey, is_item = True)
+
+	elif name == 'goat leather sandals':
+		item = GameObj(x, y, '[', name, libtcod.lighter_azure, is_item = True)
 
 	return item
 
@@ -1674,6 +1681,12 @@ def initialize_fov():
 
 def displayinv():
 	return filter(lambda x: x.equipment not in get_all_equipped(player), inventory)
+	# non_equiplist = []
+	# for item in get_all_equipped(player):
+	# 	if item.equipment: continue
+	# 	else: non_equiplist.append(item)
+
+	# return non_equiplist
 
 def inventory_menu(header):
 	inv = displayinv()
