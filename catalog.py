@@ -15,6 +15,8 @@ SLOTLIST = ['head',
 
 FULL_STATUSEFFECTLIST = ['maim']
 
+THROW_ITEMS = []
+
 
 FULL_INAMELIST = ['healing salve', 
 				'pipe gun', 
@@ -23,6 +25,7 @@ FULL_INAMELIST = ['healing salve',
 				'metal plate',
 				'goat leather sandals',
 				'kitchen knife',
+				"someone's memento",
 				'rebar blade']
 
 FULL_RACELIST = ['human',
@@ -109,7 +112,6 @@ gadget_adjs = ['striped',
 			'matte',
 			'gleaming',
 			'corroded',
-			'deteriorating',
 			'worn',
 			'rainbow-coloured',
 			'antiquated',
@@ -123,8 +125,20 @@ class EqSpecial:
 		self.enchantlist = get_native_enchants(self)
 
 
+	def get_all_enchant_types(self):
+		full_list = []
+		for enchant in enchantlist:
+			full_list += enchant.typelist
+		return list(set(full_list))
 
-	
+
+
+	#equipment special system explanation:
+	#GameObj is created. if the gameobj's name is found in catalog.fullinamelist, the __init__ method calls get_item_components, adding equipment or item + equipment components to itself
+	#in case it is an equipment, the equipment component further calls add_base_specials, adding an EqSpecial (that might be empty) to the equipment
+	#each 'enchantment' in a weapon is one instance of EnchantModule in that weapon's EqSpecial, which is in Equipment, which is in GameObj
+	#at the moment I only have 'native' enchantments in weapons, which are gonna be pretty much fixed, but it should be quite easy to generate random enchantments and such with this system
+	#although I will need to add a depth level rating of some sort to them at some point
 
 
 
@@ -146,9 +160,11 @@ class EnchantModule(object):
 		typelist = []
 		if self.name == 'str bonus': 
 			self.typelist.append('on atk bonus')
-		if self.name == 'maim chance':
+		elif self.name == 'maim chance':
 			self.typelist.append('on atk bonus')
 			self.typelist.append('status applier')
+		elif self.name == 'multiattack':
+			self.typelist.append('on atk bonus')
 
 
 
@@ -166,7 +182,7 @@ class SkillNode(object):
 		self.leveled = True
 
 
-def get_nodetable(treename):
+def get_nodetable(treename): #only happens in initialization of skill tree (ctree, ttree, rtree, ptree)
 	if treename == 'combat':
 		nodetable = [
 		SkillNode(name = 'basic training', tier = 1, leveled = False, abilities = ['kicklaunch'], description = get_node_description('basic training'), parent = []),
@@ -174,12 +190,12 @@ def get_nodetable(treename):
 		]
 	elif treename == 'tech':
 		nodetable = [
-		SkillNode(name = 'basic training', tier = 1, leveled = False, abilities = [], description = get_node_description('basic training'), parent = [])
+		SkillNode(name = 'basic training', tier = 1, leveled = False, abilities = [], description = get_node_description('basic engineering'), parent = [])
 		]
 
 	elif treename == 'ritual':
 		nodetable = [
-		SkillNode(name = 'basic training', tier = 1, leveled = False, abilities = ['kicklaunch'], description = get_node_description('basic training'), parent = [])
+		SkillNode(name = 'basic ritualism', tier = 1, leveled = False, abilities = ['consume trinket', 'fling trinket'], description = get_node_description('basic ritualism'), parent = [])
 		]
 
 	elif treename == 'perks':
@@ -194,9 +210,13 @@ def get_node_description(node):
 	if node == 'heavy blades':
 		return ["KICKS THEIR WITH BIG METAL STICK PLACEHOLDER PLACEHOLDER", 'test test test']
 	elif node == 'basic training':
-		return['you can kill people better with your hands', 'test test test test']
+		return ['you can kill people better with your hands', 'test test test test']
 	elif node == 'shield focus':
-		return['shield bonus, shield slam granted']
+		return ['shield bonus, shield slam granted']
+	elif node == 'basic ritualism':
+		return ['Basic training in the mysteries of rituals.', 'Allows use of trinkets, drawing of ritualistic sigils,', 'more stuff later']
+	elif node == 'basic engineering':
+		return ['Basic training in the mysteries of rituals.', 'Allows use of trinkets, drawing of ritualistic sigils,', 'more stuff later']
 
 def get_status_startfunction(status):
 	if status.name == 'maim':
@@ -218,7 +238,6 @@ def get_native_enchants(eqspecial): #must return list of EnchantModule objects
 		nativelist.append(EnchantModule(eqspecial, 'multiattack', 0.25, True))
 
 	return nativelist
-
 
 
 def ccreation_description(choice):

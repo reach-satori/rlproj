@@ -75,6 +75,28 @@ class LineHandler(EffectCon):
 
 		libtcod.sys_sleep_milli(self.sleep)
 
+def get_increments(*args):
+	if len(args) == 4:
+		origin = Point(args[0],args[1])
+		target = Point(args[2], args[3])
+	elif len(args) == 2:
+		origin = args[0]
+		target = args[1]
+
+	if origin.x == target.x and origin.y == target.y: return 0, 0
+
+	if origin.x == target.x: dx = 0
+	elif origin.y == target.y: dy = 0
+
+	if target.x > origin.x: dx = 1
+	elif target.x < origin.x: dx = -1
+
+	if target.y > origin.y: dy = 1
+	elif target.y < origin.y: dy = -1
+
+	return int(dx), int(dy)
+
+
 
 def render_effects():
 	global activeeffects
@@ -140,7 +162,6 @@ def points_to_conpoints(p1, p2):
 
 
 	return (newp1, newp2)
-
 
 
 def determine_projchar(p1, p2):                         #                                         

@@ -7,7 +7,7 @@ import graphical
 from random import gauss, uniform
 
 #TODO: big todos:
-#TODO: Graphical effects(floating text, floating numbers maybe, blood, buff effects)##
+#TODO: Graphical effects(floating text, floating numbers maybe, blood, buff effects)##floating text done
 #TODO: map generation
 #TODO: some actual interesting enemies, AI
 #TODO: staves, ranged weapons, polearms, cudgels
@@ -21,8 +21,8 @@ SCREEN_HEIGHT = 60
 
 
 #map size
-MAP_WIDTH = 80
-MAP_HEIGHT = 50
+MAP_WIDTH = 160
+MAP_HEIGHT = 150
 
 CAMERA_WIDTH = 80
 CAMERA_HEIGHT = 50
@@ -39,7 +39,7 @@ MSG_HEIGHT = PANEL_HEIGHT - 1
 
 #map gen parameters
 MAX_ROOM_MONSTERS = 3
-ROOM_MAX_SIZE = 10  # ALL TO BE CHANGED LATER OF COURSE
+ROOM_MAX_SIZE = 25  # ALL TO BE CHANGED LATER OF COURSE
 ROOM_MIN_SIZE = 6
 MAX_ROOMS = 30
  
@@ -67,6 +67,50 @@ color_dark_ground = libtcod.Color(50, 50, 150)
 color_light_wall = libtcod.Color(130, 110, 50)
 color_light_ground = libtcod.Color(200, 180, 50)
 
+class PlayerActionReport(object):
+	def __init__(self, action = None, x1 = None, y1 = None, x2 = None, y2 = None, objects = None, action_extra = None, takes_turn = True):
+		self.action = action
+		self.action_extra = action_extra
+		self.takes_turn = takes_turn
+		#actions: 'drop item', 'equip item'
+		self.x1 = x1
+		self.y1 = y1
+		self.x2 = x2
+		self.y2 = y2
+		self.objects = objects
+		self.recorder = []
+
+	def __dir__(self):
+		return ['action', 'x1', 'y1', 'y2', 'x2', 'objects', 'action_extra', 'takes_turn']
+
+	def update(self, **kwargs):#kwarg keywords must be attributes. This function updates the director singleton with the attributes passed, then sets all of its other attributes to standard values defined at the bottom(or none if there are no defaults)
+		global director
+		for keyword, value in kwargs.iteritems():
+			setattr(self, keyword, value)
+
+		attrlist = [attr for attr in dir(self)]
+		setnone = filter(lambda x: x not in kwargs, [attr for attr in dir(self)])
+		for attrname in setnone:
+			try: setattr(self, attrname, None)
+			except: raise ValueError('Something has gone wrong with the game director. Check what got passed through director.update')
+
+		if 'takes_turn' not in kwargs: self.takes_turn = True
+		if 'x1' not in kwargs: self.x1 = player.x
+		if 'y1' not in kwargs: self.y1 = player.y
+
+		self.add_to_recorder()
+
+
+
+	def add_to_recorder(self):
+		record_dict = {}
+		for attribute in dir(self):
+			record_dict[attribute] = self.__dict__[attribute]
+		self.recorder.append(record_dict)
+		if len(self.recorder) > 50: self.recorder.pop(0)
+
+
+
 
 
 
@@ -80,27 +124,17 @@ class SkillTree:
 	def get_node_from_name(self, name):
 		for node in self.nodetable:
 			if node.name == name: return node
-			else: raise ValueError('Skill list node that does not exist requested!')
+
 
 	def get_available_nodes(self):
 		available_nodes = []
 		for node in self.nodetable:
-			if (node.parent == [] or node.parent == '' or self.check_if_node_leveled(node.parent)) and not node.leveled: 
+			if (node.parent == [] or node.parent == '' or check_if_node_leveled(self, node.parent)) and not node.leveled: 
 				available_nodes.append(node)
 		if available_nodes == []: textbox('No nodes to select.')
 		else: return available_nodes
 
-	def check_if_node_leveled(self, node_s):
 
-		if type(node_s) is list:
-			for name in node_s:
-				chknode = self.get_node_from_name(name)
-				if not chknode.leveled: return False
-			return True
-
-		elif type(node_s) is str:
-			if not self.get_node_from_name(node_s): return False
-			else: return True
 
 	def node_select(self):
 		width = SCREEN_WIDTH
@@ -165,7 +199,7 @@ class SkillTree:
 class PerkTree(SkillTree):
 	def get_available_nodes(self):
 		for node in self.nodetable:
-				if pass_perk_requirements(node) and (node.parent == [] or node.parent == '' or self.check_if_node_leveled(node.parent)) and not node.leveled: 
+				if pass_perk_requirements(node) and (node.parent == [] or node.parent == '' or check_if_node_leveled(self, node.parent)) and not node.leveled: 
 					available_nodes.append(node)
 		if available_nodes == []: textbox('No nodes to select.')
 		else: return available_nodes
@@ -318,24 +352,28 @@ class Equipment:
 				message("The " + self.owner.name + ' requires both hands to use.')
 				return
 				
-			if get_equipped_in_slot(self.slot): get_equipped_in_slot(self.slot).unequip()
+			if get_equipped_in_slot(self.slot):
+				get_equipped_in_slot(self.slot).unequip()
 			self.is_equipped = True
 			message('Equipped ' + self.owner.item.dname + ' on your ' + self.slot + '.', libtcod.light_green)
+			director.update(action = 'equip item', object_s = self.owner)
 
 
 	def unequip(self):
+
 		if not self.is_equipped: return
 		self.is_equipped = False
 		message('Unequipped ' + self.owner.item.dname + ' from ' + self.slot + '.', libtcod.light_yellow)
+		director.update(action = 'unequip item', object_s = self.owner)
 
 	def equip_options(self): #upon getting chosen from the equipment menu
 		options = ['Examine', 'Unequip', 'Drop']
 		index = menu('Choose an action: ', options, 50)
-		if index == 0:#examine
+		if index == 0:
 			self.owner.item.examine()
 			return 'examine'
 
-		elif index == 1:#unequip
+		elif index == 1:
 			self.unequip()
 			return 'unequip'
 
@@ -381,18 +419,23 @@ class Item:
 		self.identified = False
 		self.already_seen = False
 		self.itemtype = itemtype
+		if itemtype == 'trinket': self.identified = True
 		#possible itemtypes: equipment, salve, gadget, trinket, heavy blade, light blade,
 
 
 	def pick_up(self):
 		if len(inventory)>=26:
 			message('Your inventory is full')
-		if sum([item.item.weight for item in inventory]) > player.max_weight:
+			return False
+		elif sum([item.item.weight for item in inventory]) > player.max_weight:
 			message("You're carrying too much already!")
+			return False
 		else:
 			inventory.append(self.owner)  # inventory has objects, not item
 			objects.remove(self.owner)
 			message('You picked up ' + self.dname + '!', libtcod.green)
+			director.update(action = 'pick up item', object_s = self.owner)
+			return True
 
 	def use(self):
 		if self.use_function == None:
@@ -400,6 +443,7 @@ class Item:
 		else:
 			if self.use_function() != 'cancelled':  #conditions for persistent/charge-based consumables go here
 				inventory.remove(self.owner)
+				director.update(action = 'use item', object_s = self.owner)
 
 	def drop(self):
 		#add to the map and remove from the player's inventory. also, place it at the player's coordinates
@@ -409,9 +453,11 @@ class Item:
 		self.owner.x = player.x
 		self.owner.y = player.y
 		message('You dropped a ' + self.dname + '.', libtcod.yellow)
+		director.update(action = 'drop item', object_s = self.owner)
 
 	def examine(self):
 		text = catalog.get_item_description(self)
+		director.update(action = 'examine item', object_s = self.owner, takes_turn = False)
 
 		textbox(text)
 
@@ -431,7 +477,7 @@ class Item:
 			return 'use'
 
 	@property
-	def dname(self):
+	def dname(self):#short for display name
 		global namekeeper
 		if self.owner.name in namekeeper:
 			self.already_seen = True
@@ -452,15 +498,16 @@ class Item:
 				else: unidname = namekeeper[self.owner.name]
 			return unidname
 
+		else: return self.owner.name
+
 class StatusEffect(object): #TODO: STACKING BEHAVIOUR FOR STATUS EFFECTS
 	def __init__(self, name, duration, affected):
 		self.name = name
 		self.duration = duration
 		if duration == 0: self.duration = -1
 		self.affected = affected
-		self.stepfunction = catalog.get_status_stepfunction(self)
 
-		startfunc = catalog.get_status_startfunction(self)
+		self.status_startfunction()
 		
 
 		
@@ -468,11 +515,94 @@ class StatusEffect(object): #TODO: STACKING BEHAVIOUR FOR STATUS EFFECTS
 	def activate(self):
 		if self.duration == 0:
 			self.terminate()
-		self.duration -= 1
-		if self.stepfunction: self.stepfunction()
+		else:
+			self.status_stepfunction()
 
 	def terminate(self):
 		self.affected.status.remove(self)
+
+	def status_startfunction(self):
+		if self.name == 'maim':
+			return graphical.FloatingText(self.affected.owner, self.name, libtcod.violet)
+
+	def status_stepfunction(self):
+		if self.name == 'drawing' and director.action == 'move':
+			x, y = director.x1, director.y1
+			prevtile = None
+			if gamemap[x][y].special and gamemap[x][y].special.name == 'drawing': prevtile = gamemap[x][y].special.char
+
+			character = determine_drawchar(prevtile)
+			drawntile = SpTile(name = 'drawing', char = character, background = libtcod.darkest_red)
+			
+			if not gamemap[x][y].special: gamemap[x][y].special = drawntile
+
+
+		self.duration -= 1
+
+def determine_orientation(dxl, dyl):
+	orient = ''
+	if dxl == 1 and dyl == 0:
+		orient = 'from w'
+	elif dxl == 1 and dyl == -1:
+		orient = 'from sw'
+	elif dxl == 1 and dyl == 1:
+		orient = 'from nw'
+
+	elif dxl == -1 and dyl == 0:
+		orient = 'from e'
+	elif dxl == -1 and dyl == -1:
+		orient = 'from se'
+	elif dxl == -1 and dyl == 1:
+		orient = 'from ne'
+
+	elif dxl == 0 and dyl == 1:
+		orient = 'from n'
+	elif dxl == 0 and dyl == -1:
+		orient = 'from s'
+
+	return orient
+
+def determine_drawchar(prevchar):
+	if director.action == 'move': x1, x2, y1, y2 = director.x1, director.x2, director.y1, director.y2
+	lastmove = get_last_move_action()
+	dxl, dyl = graphical.get_increments(lastmove['x1'], lastmove['y1'], lastmove['x2'], lastmove['y2'])
+	dx, dy = graphical.get_increments(x1, y1, x2, y2)
+	lorient = determine_orientation(dxl, dyl)
+	corient = determine_orientation(dx, dy)
+	char = 100
+	if director.action == 'move' and not prevchar:
+		if (lorient == 'from w' and corient == 'from s') or (lorient == 'from n' and corient == 'from e') : char = 180
+		elif (lorient == 'from w' and corient == 'from n') or (lorient == 'from s' and corient == 'from e'): char = 183
+		elif (lorient == 'from s' and corient == 'from w') or (lorient == 'from e' and corient == 'from n'): char = 182 #these are 90deg corners
+		elif (lorient == 'from n' and corient == 'from w') or (lorient == 'from e' and corient == 'from s'): char = 181
+
+		elif (lorient == 'from sw' and corient == 'from w') or (lorient == 'from e' and corient == 'from ne'): char = 200
+		elif (lorient ==  'from nw' and corient == 'from w') or (lorient == 'from e' and corient == 'from se'): char = 199
+		elif (lorient ==  'from w' and corient == 'from sw') or (lorient == 'from ne' and corient == 'from e'): char = 198
+		elif (lorient ==  'from w' and corient == 'from nw') or (lorient == 'from se' and corient == 'from e'): char = 201 #120deg corners (center - diag)
+		elif (lorient ==  'from n' and corient == 'from ne') or (lorient == 'from sw' and corient == 'from s'): char = 202
+		elif (lorient ==  'from nw' and corient == 'from n') or (lorient == 'from s' and corient == 'from se'): char = 205
+		elif (lorient ==  'from ne' and corient == 'from n') or (lorient == 'from s' and corient == 'from sw'): char = 204
+		elif (lorient ==  'from n' and corient == 'from nw') or (lorient == 'from se' and corient == 'from s'): char = 203
+
+
+		elif dyl == 0 and dy == 0: char = 196 #straight lines :horizontal
+		elif dxl == 0 and dx == 0: char = 179#vertical
+		elif (lorient ==  'from se' and corient == 'from se') or (lorient == 'from nw' and corient == 'from nw'): char = 189 #diagonals
+		elif (lorient ==  'from ne' and corient == 'from ne') or (lorient == 'from sw' and corient == 'from sw'): char = 188
+
+		elif (lorient ==  'from se' and corient == 'from ne') or (lorient == 'from se' and corient == 'from ne'): char = 211
+		elif (lorient ==  'from nw' and corient == 'from sw') or (lorient == 'from ne' and corient == 'from se'): char = 209
+		elif (lorient ==  'from ne' and corient == 'from nw') or (lorient == 'from se' and corient == 'from sw'): char = 210 #'beaks'
+		elif (lorient ==  'from nw' and corient == 'from ne') or (lorient == 'from sw' and corient == 'from se'): char = 212
+
+
+	return char
+
+def get_last_move_action():
+	for i in range(len(director.recorder)-2, 0, -1):
+		if director.recorder[i]['action'] == 'move':
+			return director.recorder[i]
 
 
 class Fighter:
@@ -511,17 +641,20 @@ class Fighter:
 			multiattack = get_multiattack_number()
 
 			for i in range(multiattack):
+
+				if not target.fighter: break #if target dies in between multiattacks, exit loop
+
 				damage = self.power()
 				for equip in get_all_equipped(self.owner):#equivalent to global player
 					damage.add(equip.apply_on_atk_bonus(self.owner, target))
 				finaldmg = damage.resolve()
 				finaldmg -= target.fighter.armor
 
-				if finaldmg > 0:
-					message('You attack the ' + target.name + ' for ' + str(int(round(finaldmg))) + ' hit points.')
-					target.fighter.take_damage(finaldmg)
-				else:
-					message(self.owner.name.capitalize() + ' attacks ' + target.name + ' but it has no effect!')
+				if finaldmg < 0: finaldmg = 0
+
+				message('You attack the ' + target.name + ' for ' + str(int(round(finaldmg))) + ' hit points.')
+				target.fighter.take_damage(finaldmg)
+			director.update(action = 'attack', x2 = target.x, y2 = target.y)
 
 		else:
 			if libtcod.random_get_int(0, 1, 100) > int(round(target.dodge * 1.3)):
@@ -558,7 +691,6 @@ class Fighter:
 		else:
 			return normal_randomize(self.base_power, self.base_power/10)
 
-																			
 
 	@property
 	def armor(self):  #return actual defense, by summing up the bonuses from all equipped items
@@ -687,10 +819,10 @@ class Camera(object):
 				mapx = self.x + camx
 
 				visible = libtcod.map_is_in_fov(fov_map, mapx, mapy)
-				wall = map[mapx][mapy].block_sight
-				special = map[mapx][mapy].special
+				wall = gamemap[mapx][mapy].block_sight
+				special = gamemap[mapx][mapy].special
 				if not visible:
-					if map[mapx][mapy].explored:
+					if gamemap[mapx][mapy].explored:
 						if wall:
 							libtcod.console_put_char_ex(con, camx, camy, '#', color_dark_wall, libtcod.black)           #
 						else:                                                                                     #
@@ -707,7 +839,7 @@ class Camera(object):
 						libtcod.console_put_char_ex(con, camx, camy, '.', color_light_ground, libtcod.black)
 					if special:
 						libtcod.console_put_char_ex(con, camx, camy, special.char, special.foreground, special.background)
-					map[mapx][mapy].explored = True
+					gamemap[mapx][mapy].explored = True
 
 
 	@property
@@ -715,14 +847,6 @@ class Camera(object):
 		centerx = self.x + self.width/2
 		centery = self.y + self.height/2
 		return centerx, centery
-
-	@property
-	def x(self):
-		return self._x
-
-	@property
-	def y(self):
-		return self._y
 
 	@property
 	def x2(self):
@@ -734,7 +858,13 @@ class Camera(object):
 	
 	
 
+	@property
+	def x(self):
+		return self._x
 
+	@property
+	def y(self):
+		return self._y
 	
 	@x.setter
 	def x(self, value):
@@ -750,7 +880,8 @@ class Camera(object):
 
 
 class SpTile:
-	def __init__(self, char = None, foreground = None, background = None, onwalk_effect = None):# 
+	def __init__(self, name, char = None, foreground = None, background = None, onwalk_effect = None):
+		self.name = name# 
 		self.char = char                                                                        # 
 		self.foreground = foreground                                                            # 
 		self.background = background                                                            # 
@@ -776,10 +907,9 @@ class Tile:
 
 
 class GameObj(object):
-	def __init__(self, x, y, char, name, color, blocks = False, fighter = None, ai = None, is_item = False, ignore_fov = False, equipment = None, item = None):
+	def __init__(self, x, y, char, name, color, blocks = False, fighter = None, ai = None, ignore_fov = False, equipment = None, item = None):
 		self.x = x
 		self.y = y
-		self.is_item = is_item
 		self.char = char
 		self.color = color
 		self.blocks = blocks
@@ -790,7 +920,7 @@ class GameObj(object):
 
 
 
-		if self.is_item: self.get_item_components()
+		if self.name in catalog.FULL_INAMELIST: self.get_item_components()
 
 
 
@@ -809,7 +939,7 @@ class GameObj(object):
 		#Scan the current map each turn and set all the walls as unwalkable
 		for y1 in range(MAP_HEIGHT):
 			for x1 in range(MAP_WIDTH):
-				libtcod.map_set_properties(fov, x1, y1, not map[x1][y1].block_sight, not map[x1][y1].blocked)
+				libtcod.map_set_properties(fov, x1, y1, not gamemap[x1][y1].block_sight, not gamemap[x1][y1].blocked)
  
 		#Scan all the objects to see if there are objects that must be navigated around
 		#Check also that the object isn't self or the target (so that the start and the end points are free)
@@ -836,8 +966,8 @@ class GameObj(object):
 				#Set self's coordinates to the next path tile
 				self.x = x
 				self.y = y
-				if map[self.x][self.y].special and map[self.x][self.y].special.onwalk_effect:
-					map[self.x][self.y].special.apply_onwalk(self)
+				if gamemap[self.x][self.y].special and gamemap[self.x][self.y].special.onwalk_effect:
+					gamemap[self.x][self.y].special.apply_onwalk(self)
 		else:
 			#Keep the old move function as a backup so that if there are no paths (for example another monster blocks a corridor)
 			#it will still try to move towards the player (closer to the corridor opening)
@@ -850,9 +980,13 @@ class GameObj(object):
 		if not is_blocked(self.x+dx, self.y+dy):
 			self.x += dx
 			self.y += dy
+			if isinstance(self, Player):
+				director.update(action = 'move', x1 = self.x-dx, y1 = self.y-dy, x2 = self.x, y2 = self.y)
 
-		if map[self.x][self.y].special and map[self.x][self.y].special.onwalk_effect:
-			map[self.x][self.y].special.apply_onwalk(self)
+		if gamemap[self.x][self.y].special and gamemap[self.x][self.y].special.onwalk_effect:
+			gamemap[self.x][self.y].special.apply_onwalk(self)
+
+
 
 
 	def in_camera(self):
@@ -921,11 +1055,11 @@ class GameObj(object):
 			self.equipment = Equipment(self, slot='right hand', base_dmg = [5,7])
 			
 		elif self.name == 'rebar blade':
-			self.item = Item(self, weight = 20, depth_level = 1,itemtype = 'heavy blade')
+			self.item = Item(self, weight = 20, depth_level = 2,itemtype = 'heavy blade')
 			self.equipment = Equipment(self, slot = 'right hand', base_dmg = [10,13],  twohand = True)
 			
 		elif self.name == 'kitchen knife':
-			self.item = Item(self, weight = 4, depth_level = 2, itemtype = 'light blade')
+			self.item = Item(self, weight = 4, depth_level = 1, itemtype = 'light blade')
 			self.equipment = Equipment(self, slot='right hand', base_dmg = [3,4])
 			
 		elif self.name == 'metal plate':
@@ -936,27 +1070,15 @@ class GameObj(object):
 			self.item = Item(self, weight = 2, depth_level = 2)
 			self.equipment = Equipment(self, slot='feet', dodge_bonus = 2)
 
+		elif self.name == "someone's memento":
+			self.item = Item(self, weight = 0.5, depth_level = 2, itemtype = 'trinket')
+
 
 		############################################################################
 		#########################   ABILITY  DEFINITIONS(for player)   #############
 		############################################################################
 
-	def abl_kicklaunch(self):
-		target = random_adj_target()
-		if target == None:
-			message('Nobody to kick!')
-			return
-		dx, dy = get_increments(self, target)
 
-
-
-		dmg = self.fighter.power(multipliers = [0.5])
-		dmg = dmg.resolve()
-		target.fighter.take_damage(dmg)
-		message('You put all your strength behind a mighty kick, dealing ' + str(int(round(dmg))) + ' damage.', libtcod.light_red)
-		
-		if push(self, target, 3): message('The ' + target.name + ' slams into something violently!') 
-	# 		# ABILITY DISTANCE NUMBER
 
 	@property
 	def camx(self):
@@ -971,17 +1093,52 @@ class GameObj(object):
 
 
 
-
 class Player(GameObj):#player is inherited because it's easier since it has one instance, but other stuff is usually components
 	def __init__(self, race = 'human', gclass = 'warden', stats = {'strength':5,'constitution':5,'agility':5,'intelligence':5,'attunement':5}, perks = []):
 		fighter_component = Fighter(hp=30, armor = 3, power=3, xp = 0, death_function = player_death) #changed later through ccreation
-		GameObj.__init__(self,0,0, '@', 'player', libtcod.white, blocks = True, is_item = False, fighter = fighter_component)
+		GameObj.__init__(self,0,0, '@', 'player', libtcod.white, blocks = True, fighter = fighter_component)
 		self.race = race #only player-exclusive stats should go here if possible
 		self.gclass = gclass #gclass for game class
 		self.stats = stats
 		self.perks = perks
 		self.lvl = 1
 		#self.abilities
+
+
+
+	def abl_kicklaunch(self): #return true if went through, false if its cancelled
+		target = random_adj_target()
+		if target == None:
+			message('Nobody to kick!')
+			return False
+			
+		dx, dy = graphical.get_increments(self, target)
+		dmg = self.fighter.power(multipliers = [0.5])
+		dmg = dmg.resolve()
+		target.fighter.take_damage(dmg)
+		message('You put all your strength behind a mighty kick, dealing ' + str(int(round(dmg))) + ' damage.', libtcod.light_red)
+		
+		if push(self, target, 3) < 3: message('The ' + target.name + ' slams into something violently!') 
+		director.update(action = 'use ability', action_extra = 'kicklaunch', x2 = target.x, y2 = target.y)
+		return True
+# 		# ABILITY DISTANCE NUMBER
+
+	def abl_fling_trinket(self, chosen_trinket = None):
+		if not chosen_trinket: chosen_trinket = inventory_menu('Choose a trinket to throw:', itemtype = 'trinket') #so you can arrive here through 't' throw or 'a' ability > fling trinket..... remember inventory_menu returns None if it's cancelled
+		if not chosen_trinket: return None
+		
+	def abl_consume_trinket(self, chosen_trinket = None):
+		if not chosen_trinket: chosen_trinket = inventory_menu('Choose a trinket to throw:', itemtype = 'trinket') #so you can arrive here through 't' throw or 'a' ability > fling trinket..... remember inventory_menu returns None if it's cancelled
+
+	def abl_toggle_drawing(self):
+		if 'drawing' not in [stati.name for stati in self.fighter.status]:
+			player.fighter.receive_status('drawing', 0)
+			director.update(action = 'start drawing')
+		else:
+			wanted_status = filter(lambda x: x.name == 'drawing', self.fighter.status)
+			wanted_status[0].terminate()
+
+
 
 	@property
 	def abilities(self):
@@ -1014,7 +1171,7 @@ def tree_lvlup():
 
 	while True:
 		index = menu('Choose skill tree', options, SCREEN_WIDTH)
-		if index is None: continue
+		if index is None or index not in [0,1,2]: continue
 		elif index is 0:
 			if ctree.node_select(): break
 		elif index is 1:
@@ -1058,7 +1215,7 @@ def main_menu():
 def save_game():
 	#open a new empty shelve (possibly overwriting an old one) to write the game data
 	file = shelve.open('savegame', 'n')
-	file['map'] = map
+	file['gamemap'] = gamemap
 	file['objects'] = objects
 	file['player_index'] = objects.index(player)  #index of player in objects list
 	file['inventory'] = inventory
@@ -1070,10 +1227,10 @@ def save_game():
  
 def load_game():
 	#open the previously saved shelve and load the game data
-	global map, objects, player, inventory, game_msgs, game_state, dungeon_level, stairs
+	global gamemap, objects, player, inventory, game_msgs, game_state, dungeon_level, stairs
 
 	file = shelve.open('savegame', 'r')
-	map = file['map']
+	gamemap = file['gamemap']
 	objects = file['objects']
 	player = objects[file['player_index']]  #get index of player in objects list and access it
 	inventory = file['inventory']
@@ -1092,6 +1249,8 @@ def play_game():
 	key = libtcod.Key()
 	mouse = libtcod.Mouse()
 
+	
+
 	render_all()
 	lovemessage = ['the game begins','some kind of lore goes here',"but for now its a placeholder","placeholder placeholder"]
 	textbox(lovemessage)
@@ -1109,15 +1268,16 @@ def play_game():
 		libtcod.sys_check_for_event(libtcod.EVENT_KEY_PRESS,key,mouse)
 		render_all()
 
+		for object in objects:
+			if object.fighter and len(object.fighter.status) > 0:
+				for stati in object.fighter.status:
+					stati.activate()
 
 		player_action = handle_keys()
 		if game_state == 'playing' and player_action != 'didnt-take-turn':  # remember to have checks for timed buffs and things like that here, otherwise things will become shitty
 			for object in objects:
 				if object.ai:
 					object.ai.take_turn()
-				if object.fighter and len(object.fighter.status) > 0:
-					for stati in object.fighter.status:
-						stati.activate()
 
 
 		if player_action == 'exit':
@@ -1187,7 +1347,6 @@ def handle_keys():
 		libtcod.console_set_fullscreen(not libtcod.console_is_fullscreen())
 
 	elif key.vk == libtcod.KEY_ESCAPE:
-
 		return 'exit' # exit game
 
 	#movement
@@ -1223,14 +1382,19 @@ def handle_keys():
 		elif key_char == 'g':
 				for obj in objects:
 					if obj.x == player.x and obj.y == player.y and obj.item:
-						obj.item.pick_up()
+						if obj.item.pick_up(): pass
+						else: return 'didnt-take-turn'
 
-		elif key_char == 'd':
+
+		elif key_char == 'd' and not key.shift:
 			#show the inventory; if an item is selected, drop it
 			chosen_item = inventory_menu('Press the key next to an item to drop it, or any other to cancel.\n')
 			if chosen_item is not None:
 				chosen_item.drop()
 			else: return 'didnt-take-turn'
+
+		elif key_char == 'd' and key.shift:
+			player.abl_toggle_drawing()
 
 		elif key_char == 'e':
 			if key.shift: # E (SHIFT E) prompts you to equip an item
@@ -1253,18 +1417,8 @@ def handle_keys():
 					if chosen_action == 'examine': return 'didnt-take-turn'
 
 		elif key_char == 'z':
-			ability_choices = [ability for ability in player.abilities]
-			if ability_choices != []:
-				choice = menu('Press a key for an ability, or any other to cancel.', ability_choices, SCREEN_WIDTH/2)
-			else: 
-				msgbox("You don't have any abilities yet.")
-				return 'didnt-take-turn'
-
-			if choice is not None:
-				if ability_choices[choice] == 'kicklaunch':
-					player.abl_kicklaunch()
-			else:
-				return 'didnt-take-turn'
+			abil = ability_menu()
+			if not abil: return 'didnt-take-turn'
 
 		elif key_char == 'a':
 			chosen_item = inventory_menu('Press the key next to an item to use it.\n')
@@ -1280,29 +1434,15 @@ def handle_keys():
 				chosen_action = chosen_item.item_options()
 				if chosen_action == 'examine': return 'didnt-take-turn'
 			else: return 'didnt-take-turn'
-
+		elif chr(key.c) == ']':
+			raise ValueError(director.action)
 		else:
-			
-			############################ ENTER OTHER KEY COMMANDS HERE WITH if key_char == blahblah
-			#if key_char == chr(key.i):
-			#	inventory_menu('Press the key next to an item to use it, or any other to cancel.\n')
-			
-
-
-
-
-
-
-			
-
 			if key_char == '.' and key.shift:
 				if player.x == stairs.x and player.y == stairs.y:
 					next_level()
 				else:
 					message("You can't go down here!")
 
-			elif key_char == ']':
-				raise ValueError(get_equipped_in_slot('right hand').special.enchantlist[0].name,get_equipped_in_slot('right hand').special.enchantlist[1].name )
 
 			elif key_char == 'c':
 				#show character information
@@ -1314,10 +1454,51 @@ def handle_keys():
 
 			return 'didnt-take-turn'
 
-def make_map():
-	global map, objects, stairs, player
+def check_if_node_leveled(tree, node_s):
 
-	map = [[Tile(True)
+		if type(node_s) is list:
+			for name in node_s:
+				chknode = tree.get_node_from_name(name)
+				if not chknode.leveled: return False
+			return True
+
+		elif type(node_s) is str:
+			if not tree.get_node_from_name(node_s): return False
+			else: return True
+
+def ability_menu(): #returns ability name if ability goes through, None if its cancelled
+	ability_choices = [ability for ability in player.abilities]
+	if ability_choices != []:
+		choice = menu('Press a key for an ability, or any other to cancel.', ability_choices, SCREEN_WIDTH/2)
+	else: 
+		msgbox("You don't have any abilities yet.")
+		return None
+
+	if choice is not None: 
+		return activate_ability(ability_choices[choice]) #activates ability if its not cancelled, then returns ability name or None depending on whether it got cancelled
+	else: return None
+
+def activate_ability(abil_name): #returns abil name if not cancelled, None otherwise
+	completed = False
+	if abil_name == 'kicklaunch':
+		if player.abl_kicklaunch(): completed = True
+	elif abil_name == 'fling trinket':
+		if player.abl_fling_trinket(): completed = True
+	elif abil_name == 'consume trinket':
+		if player.abl_consume_trinket(): completed = True
+
+	if completed == True: return abil_name
+
+
+
+			
+
+
+
+def make_map():
+	global gamemap, objects, stairs, player
+
+	gamemap = [[Tile(True)
 		for y in range(MAP_HEIGHT)]
 			for x in range(MAP_WIDTH)]
 
@@ -1474,11 +1655,11 @@ def clear_screen(): #this is slow, usually you will want libtcod.console_clear i
 			libtcod.console_blit(clearer,0,0,0,0,0,0,0)
 
 def create_room(room):
-	global map
+	global gamemap
 	for x in range(room.x1+1,room.x2):
 		for y in range(room.y1+1,room.y2):
-			map[x][y].blocked = False
-			map[x][y].block_sight = False
+			gamemap[x][y].blocked = False
+			gamemap[x][y].block_sight = False
 
 def random_choice_index(chances):  #choose one option from list of chances, returning its index
 	#the dice will land on some number between 1 and the sum of the chances
@@ -1505,16 +1686,16 @@ def random_choice(chances_dict):
 	return strings[random_choice_index(chances)]  #here lies a bug that took a newbie a full beautiful sunday to squash, rip in piss
 
 def create_h_tunnel(x1,x2,y):
-	global map
+	global gamemap
 	for x in range(min(x1,x2),max(x1,x2)+1):
-		map[x][y].blocked = False
-		map[x][y].block_sight = False
+		gamemap[x][y].blocked = False
+		gamemap[x][y].block_sight = False
 
 def create_v_tunnel(y1,y2,x):
-	global map
+	global gamemap
 	for y in range(min(y1,y2),max(y1,y2)+1):
-		map[x][y].blocked = False
-		map[x][y].block_sight = False
+		gamemap[x][y].blocked = False
+		gamemap[x][y].block_sight = False
 
 def check_colorkeeper(name):
 	global colorkeeper
@@ -1525,39 +1706,42 @@ def check_colorkeeper(name):
 	return colorchoice
 
 
-def generate_item(name, x, y): #RETURNS HIGHEST OBJECT, NOT ITEM OR EQUIP COMPONENT
+def generate_item(name, x, y): #RETURNS HIGHEST OBJECT, NOT ITEM OR EQUIP COMPONENT #to add a new item, it has to be added here, to get_item_components, to catalog.FULL_INAMELIST, to descriptions in catalog
 	if name == 'healing salve':  #only basic stats go here, for special functions and descriptions go to catalog
 		colorchoice = check_colorkeeper(name)
-		item = GameObj(x, y, '!', name, colorchoice, None, None, None, is_item = True)
+		item = GameObj(x, y, '!', name, colorchoice, None, None, None,)
 
 	elif name == 'pipe gun':
 		colorchoice = check_colorkeeper(name)
-		item = GameObj(x, y, '?', name, colorchoice, None, None, None, is_item = True)
+		item = GameObj(x, y, '?', name, colorchoice, None, None, None )
 
 	elif name == 'crude grenade':
 		colorchoice = check_colorkeeper(name)
-		item = GameObj(x, y, '?', name, colorchoice, None, None, None, is_item = True)
+		item = GameObj(x, y, '?', name, colorchoice, None, None, None )
 
 	elif name == 'scrap metal sword':
-		item = GameObj(x, y, '/', name, libtcod.desaturated_blue, is_item = True)
+		item = GameObj(x, y, '/', name, libtcod.desaturated_blue )
 
 	elif name == 'rebar blade':
-		item = GameObj(x, y, '/', name, libtcod.darkest_green, is_item = True)
+		item = GameObj(x, y, '/', name, libtcod.darkest_green )
 
 	elif name == 'kitchen knife':
-		item = GameObj(x, y, '/', name, libtcod.darker_sepia, is_item = True, ignore_fov = True)
+		item = GameObj(x, y, '/', name, libtcod.darker_sepia, ignore_fov = True)
 
 	elif name == 'metal plate':
-		item = GameObj(x, y, '[', name, libtcod.light_grey, is_item = True)
+		item = GameObj(x, y, '[', name, libtcod.light_grey )
 
 	elif name == 'goat leather sandals':
-		item = GameObj(x, y, '[', name, libtcod.lighter_azure, is_item = True)
+		item = GameObj(x, y, '[', name, libtcod.lighter_azure )
+
+	elif name == "someone's memento":
+		item = GameObj(x,y, '*', name, libtcod.gold)
 
 	return item
 
 def generate_tile(name):
 	if name == 'jagged rock':
-		special_component = SpTile(',', libtcod.white, libtcod.black, onwalk_effect = {'damage':2})
+		special_component = SpTile(name, ',', libtcod.white, libtcod.black, onwalk_effect = {'damage':2})
 		tile = Tile(False, None, special_component)
 	return tile
 
@@ -1592,7 +1776,7 @@ def place_objects(room):
 	y = libtcod.random_get_int(0, room.y1+1, room.y2-1)
 
 def is_blocked(x,y):
-	if map[x][y].blocked:
+	if gamemap[x][y].blocked:
 		return True
 	
 	for obj in objects:
@@ -1677,19 +1861,12 @@ def initialize_fov():
 
 	for y in range(MAP_HEIGHT):
 		for x in range(MAP_WIDTH):
-			libtcod.map_set_properties(fov_map, x, y, not map[x][y].block_sight, not map[x][y].blocked)
+			libtcod.map_set_properties(fov_map, x, y, not gamemap[x][y].block_sight, not gamemap[x][y].blocked)
 
-def displayinv():
-	return filter(lambda x: x.equipment not in get_all_equipped(player), inventory)
-	# non_equiplist = []
-	# for item in get_all_equipped(player):
-	# 	if item.equipment: continue
-	# 	else: non_equiplist.append(item)
 
-	# return non_equiplist
 
-def inventory_menu(header):
-	inv = displayinv()
+def inventory_menu(header, itemtype = None):
+	inv = filter(lambda x: x.equipment not in get_all_equipped(player) and x.item.itemtype == itemtype, inventory)
 
 	if len(inv) == 0:
 		options = ['You have NOTHING!']
@@ -1702,12 +1879,13 @@ def inventory_menu(header):
 	index = menu(header, options, INVENTORY_WIDTH)
 
 	if index is None or len(inv) == 0: return None
-	return inv[index].item # RETURNS ITEM - RETURNS ITEM
+	return inv[index].item # RETURNS ITEM COMPONENT
 
 def action_equip_menu(header):
 	options = []
 	output_item = []
-	inv = displayinv()
+	inv = filter(lambda x: x.equipment, inventory)
+	inv = filter(lambda x: x.equipment not in get_all_equipped(player), inv)
 	for item in inv:
 		if item.equipment and not item.equipment.is_equipped:
 			options.append(item.item.dname)
@@ -1742,10 +1920,9 @@ def equipment_menu(header):
 
 def textbox(lines): # takes text as a list of (str)lines and displays it
 	width = 0
-	if type(lines) is list:
-		for line in lines:
-			if len(line) > width:
-				width = len(line)
+	if type(lines) == list:
+		width = map(lambda x: len(x), lines)
+		width = max(width)
 	else:
 		width = len(lines)
 
@@ -1932,12 +2109,12 @@ def clear_game():
 	clear_screen()
 
 def new_game():
-	global player, game_msgs, game_state, inventory, dungeon_level, namekeeper, colorkeeper, camera
+	global player, game_msgs, game_state, inventory, dungeon_level, namekeeper, colorkeeper, camera, director
 
 	player = Player()
 	dungeon_level = 1
 	colorkeeper = {}
-	
+	director = PlayerActionReport()
 	inventory = []
 	namekeeper = {}
 	game_msgs = []
@@ -1956,32 +2133,16 @@ def new_game():
 
 	
 
-	
-def get_increments(origin, target):
-	if origin.x == target.x and origin.y == target.y: return 0, 0
-
-	if origin.x == target.x: dx = 0
-	elif origin.y == target.y: dy = 0
-
-	if target.x > origin.x: dx = 1
-	elif target.x < origin.x: dx = -1
-
-	if target.y > origin.y: dy = 1
-	elif target.y < origin.y: dy = -1
-
-	return int(dx), int(dy)
 
 def push(origin, target, distance):#only usable for 1 tile distance between target and origin, because i'd need a line algorhithm for longer distance pushes (so it's not just a vertical, horizontal or perfectly diagonal line)
 	if origin.distance_to(target) <= 2: #can expand it later
-		dx, dy = get_increments(origin, target)
-		for i in range(distance):
+		dx, dy = graphical.get_increments(origin, target)
+		for i in range(1, distance+1):
 			if not is_blocked(target.x+dx, target.y+dy):
 				target.x += dx
 				target.y += dy
-			else: #since the loop checks the NEXT iteration, if it detects a blockage there's still one empty tile to go, thus this else clause
-				target.x += dx
-				target.y += dy
-				if i < distance - 1: return 'blocked at ' + str(i)
+			elif i < distance: return i # return where it got blocked
+		return distance
 
 def pot_heal():
 	if player.fighter.hp == player.fighter.max_hp:
@@ -2040,17 +2201,11 @@ def pass_node_requirements(node):
 	else: return False
 
 
-
-
-libtcod.console_set_custom_font('terminal10x16_gs_tc.png', libtcod.FONT_TYPE_GREYSCALE | libtcod.FONT_LAYOUT_TCOD)
+libtcod.console_set_custom_font('Terminus.png', libtcod.FONT_LAYOUT_ASCII_INROW)
 libtcod.console_init_root(SCREEN_WIDTH, SCREEN_HEIGHT, 'python/libtcod tutorial', False)
 libtcod.sys_set_fps(LIMIT_FPS)
 con = libtcod.console_new(CAMERA_WIDTH, CAMERA_HEIGHT)
 panel = libtcod.console_new(SCREEN_WIDTH, PANEL_HEIGHT)
-
-
-
-
 main_menu()
 
 
