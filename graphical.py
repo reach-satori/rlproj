@@ -70,6 +70,8 @@ class LineHandler(EffectCon):
 		for point in self.line:
 			libtcod.console_put_char(self.console,int(point.x), int(point.y), self.char, libtcod.BKGND_NONE)
 
+		lastpoint = self.line[-1]
+		libtcod.console_put_char(self.console, int(lastpoint.x), int(lastpoint.y), 9, libtcod.BKGND_NONE)
 		libtcod.console_blit(self.console, 0, 0, 0, 0, 0, min(self.origin.camx, self.end.camx), min(self.origin.camy, self.end.camy), 1, 0)
 		libtcod.console_flush()
 
@@ -101,7 +103,9 @@ def get_increments(*args):
 def render_effects():
 	global activeeffects
 	for effect in activeeffects:
-		if effect.duration == 0: activeeffects.remove(effect)
+		if effect.duration == 0: 
+			activeeffects.remove(effect)
+			libtcod.console_delete(effect.console)
 		effect.draw()
 
 def console_from_twopts(origin, end):

@@ -67,18 +67,46 @@ color_dark_ground = libtcod.Color(50, 50, 150)
 color_light_wall = libtcod.Color(130, 110, 50)
 color_light_ground = libtcod.Color(200, 180, 50)
 
-class PlayerActionReport(object):
+class DrawingDir(object): #singleton drawdir
+	def __init__(self): #keeps record of ritual drawings on the ground that are not yet activated, since I want the player to be able to have multiple of them set up at once
+		self.drawinglist = []
+
+
+class RitualDraw(object): #each drawing main body is represented by this
+	def __init__(self, originx, originy):
+		self.length = 1
+		self.originx = originx
+		self.originy = originy
+		self.drawntile_list = []
+		self.concluded = False
+
+
+	def add_drawntile(self, tile): #list of gamemap tiles involved
+		self.drawntile_list.append(tile)
+
+
+
+
+class Point:
+	def __init__(self, x, y):
+		self.x = x
+		self.y = y
+
+
+
+class PlayerActionReport(object): #singleton, director
 	def __init__(self, action = None, x1 = None, y1 = None, x2 = None, y2 = None, objects = None, action_extra = None, takes_turn = True):
 		self.action = action
-		self.action_extra = action_extra
-		self.takes_turn = takes_turn
-		#actions: 'drop item', 'equip item'
-		self.x1 = x1
-		self.y1 = y1
-		self.x2 = x2
-		self.y2 = y2
-		self.objects = objects
-		self.recorder = []
+		self.action_extra = action_extra   #
+		self.takes_turn = takes_turn       #
+#ACTIONS: move, attack, start drawing, stop drawing, drop item, equip item, use item
+
+		self.x1 = x1                       #This object reports on the last action taken by the player, as well as keeping a record of the last 50 actions in a list(number decided in add_to_recorder),
+		self.y1 = y1                       #Remember to add a director update call to every player action that takes a turn
+		self.x2 = x2                       #
+		self.y2 = y2                       #
+		self.objects = objects             #
+		self.recorder = []                 #
 
 	def __dir__(self):
 		return ['action', 'x1', 'y1', 'y2', 'x2', 'objects', 'action_extra', 'takes_turn']
@@ -92,7 +120,7 @@ class PlayerActionReport(object):
 		setnone = filter(lambda x: x not in kwargs, [attr for attr in dir(self)])
 		for attrname in setnone:
 			try: setattr(self, attrname, None)
-			except: raise ValueError('Something has gone wrong with the game director. Check what got passed through director.update')
+			except: raise ValueError('Something has gone wrong with the game director. Check what got passed through director.update', attrname, setnone, dir(self))
 
 		if 'takes_turn' not in kwargs: self.takes_turn = True
 		if 'x1' not in kwargs: self.x1 = player.x
@@ -100,14 +128,12 @@ class PlayerActionReport(object):
 
 		self.add_to_recorder()
 
-
-
 	def add_to_recorder(self):
 		record_dict = {}
 		for attribute in dir(self):
 			record_dict[attribute] = self.__dict__[attribute]
 		self.recorder.append(record_dict)
-		if len(self.recorder) > 50: self.recorder.pop(0)
+		if len(self.recorder) > 50: self.recorder.pop(0) #rolling list
 
 
 
@@ -213,7 +239,7 @@ class PerkTree(SkillTree):
 
 
 
-class Ccreation:
+class Ccreation: #singleton, ccreation
 #character creation code is a bit of a mess here, but it should be understandable if you go through it line by line
 	def __init__(self, stage = 'race select', chosenrace = 'empty', chosengclass = 'empty', chosenperk = 'empty'):
 		self.stage = stage
@@ -507,11 +533,6 @@ class StatusEffect(object): #TODO: STACKING BEHAVIOUR FOR STATUS EFFECTS
 		if duration == 0: self.duration = -1
 		self.affected = affected
 
-		self.status_startfunction()
-		
-
-		
-
 	def activate(self):
 		if self.duration == 0:
 			self.terminate()
@@ -525,84 +546,14 @@ class StatusEffect(object): #TODO: STACKING BEHAVIOUR FOR STATUS EFFECTS
 		if self.name == 'maim':
 			return graphical.FloatingText(self.affected.owner, self.name, libtcod.violet)
 
-	def status_stepfunction(self):
-		if self.name == 'drawing' and director.action == 'move':
-			x, y = director.x1, director.y1
-			prevtile = None
-			if gamemap[x][y].special and gamemap[x][y].special.name == 'drawing': prevtile = gamemap[x][y].special.char
 
-			character = determine_drawchar(prevtile)
-			drawntile = SpTile(name = 'drawing', char = character, background = libtcod.darkest_red)
-			
-			if not gamemap[x][y].special: gamemap[x][y].special = drawntile
+	def status_stepfunction(self):
+		if self.name == 'drawing': 
+			drawing_function(self)
 
 
 		self.duration -= 1
 
-def determine_orientation(dxl, dyl):
-	orient = ''
-	if dxl == 1 and dyl == 0:
-		orient = 'from w'
-	elif dxl == 1 and dyl == -1:
-		orient = 'from sw'
-	elif dxl == 1 and dyl == 1:
-		orient = 'from nw'
-
-	elif dxl == -1 and dyl == 0:
-		orient = 'from e'
-	elif dxl == -1 and dyl == -1:
-		orient = 'from se'
-	elif dxl == -1 and dyl == 1:
-		orient = 'from ne'
-
-	elif dxl == 0 and dyl == 1:
-		orient = 'from n'
-	elif dxl == 0 and dyl == -1:
-		orient = 'from s'
-
-	return orient
-
-def determine_drawchar(prevchar):
-	if director.action == 'move': x1, x2, y1, y2 = director.x1, director.x2, director.y1, director.y2
-	lastmove = get_last_move_action()
-	dxl, dyl = graphical.get_increments(lastmove['x1'], lastmove['y1'], lastmove['x2'], lastmove['y2'])
-	dx, dy = graphical.get_increments(x1, y1, x2, y2)
-	lorient = determine_orientation(dxl, dyl)
-	corient = determine_orientation(dx, dy)
-	char = 100
-	if director.action == 'move' and not prevchar:
-		if (lorient == 'from w' and corient == 'from s') or (lorient == 'from n' and corient == 'from e') : char = 180
-		elif (lorient == 'from w' and corient == 'from n') or (lorient == 'from s' and corient == 'from e'): char = 183
-		elif (lorient == 'from s' and corient == 'from w') or (lorient == 'from e' and corient == 'from n'): char = 182 #these are 90deg corners
-		elif (lorient == 'from n' and corient == 'from w') or (lorient == 'from e' and corient == 'from s'): char = 181
-
-		elif (lorient == 'from sw' and corient == 'from w') or (lorient == 'from e' and corient == 'from ne'): char = 200
-		elif (lorient ==  'from nw' and corient == 'from w') or (lorient == 'from e' and corient == 'from se'): char = 199
-		elif (lorient ==  'from w' and corient == 'from sw') or (lorient == 'from ne' and corient == 'from e'): char = 198
-		elif (lorient ==  'from w' and corient == 'from nw') or (lorient == 'from se' and corient == 'from e'): char = 201 #120deg corners (center - diag)
-		elif (lorient ==  'from n' and corient == 'from ne') or (lorient == 'from sw' and corient == 'from s'): char = 202
-		elif (lorient ==  'from nw' and corient == 'from n') or (lorient == 'from s' and corient == 'from se'): char = 205
-		elif (lorient ==  'from ne' and corient == 'from n') or (lorient == 'from s' and corient == 'from sw'): char = 204
-		elif (lorient ==  'from n' and corient == 'from nw') or (lorient == 'from se' and corient == 'from s'): char = 203
-
-
-		elif dyl == 0 and dy == 0: char = 196 #straight lines :horizontal
-		elif dxl == 0 and dx == 0: char = 179#vertical
-		elif (lorient ==  'from se' and corient == 'from se') or (lorient == 'from nw' and corient == 'from nw'): char = 189 #diagonals
-		elif (lorient ==  'from ne' and corient == 'from ne') or (lorient == 'from sw' and corient == 'from sw'): char = 188
-
-		elif (lorient ==  'from se' and corient == 'from ne') or (lorient == 'from se' and corient == 'from ne'): char = 211
-		elif (lorient ==  'from nw' and corient == 'from sw') or (lorient == 'from ne' and corient == 'from se'): char = 209
-		elif (lorient ==  'from ne' and corient == 'from nw') or (lorient == 'from se' and corient == 'from sw'): char = 210 #'beaks'
-		elif (lorient ==  'from nw' and corient == 'from ne') or (lorient == 'from sw' and corient == 'from se'): char = 212
-
-
-	return char
-
-def get_last_move_action():
-	for i in range(len(director.recorder)-2, 0, -1):
-		if director.recorder[i]['action'] == 'move':
-			return director.recorder[i]
 
 
 class Fighter:
@@ -702,18 +653,7 @@ class Fighter:
 		bonus = sum(equipment.max_hp_bonus for equipment in get_all_equipped(self.owner))
 		return self.base_max_hp + bonus
 
-def get_multiattack_number():
-	attackn = 0
-	for equip in get_all_equipped(player):
-		for enchant in equip.special.enchantlist: 
-			if enchant.name == 'multiattack': attackn += enchant.value
-
-	attackn *= player.stats['agility']/5
-	attackn += 1
-######################
-	if uniform(math.floor(attackn), math.ceil(attackn)) > attackn:#
-		return int(math.floor(attackn))                           # if attackn is not an integer(as it usually wont be), this bit of code just takes a uniform probability on the decimal part
-	else: return int(math.ceil(attackn))                          # exemple: if attackn == 3.4, it does 3 attacks always and has a 40% chance of doing an additional attack for a total of 4
+                     # exemple: if attackn == 3.4, it does 3 attacks always and has a 40% chance of doing an additional attack for a total of 4
 
 class Dmg:
 	def __init__(self, multiplicative, multiplier = 1, flat = 0):
@@ -830,8 +770,7 @@ class Camera(object):
 						if special and wall:                                                                      # basically there are 3 nested rectangles: the biggest beingthe actual map where objects interact and the game happens, the second is the camera, which gets rendered to con in camera_render method
 							libtcod.console_put_char_ex(con, camx, camy, special.char, color_dark_wall, libtcod.black)  # the third is a phantom FREEMOVE square which is checked in check_for_posreset and all it does is center the camera position (separately for x and y) when the player walks outside of it
 						elif special and not wall:                                                                 #most of the complexity is just in juggling coordinates between camera and map, but it more or less comes down to : 
-							libtcod.console_put_char_ex(con, camx, camy, special.char, color_dark_ground, libtcod.black) #mapcoord = camera_origin_coord + current_camera_coord: that's those mapx and mapy variables. if it's still hard try drawing it out
-
+							libtcod.console_put_char_ex(con, camx, camy, special.char, color_dark_ground, libtcod.black) #mapcoord = camera_origin_coord + current_camera_coord: that's those mapx and mapy variables. works like poschengband camera
 				else: #it's visible
 					if wall:
 						libtcod.console_put_char_ex(con, camx, camy, '#', color_light_wall, libtcod.black)
@@ -1074,9 +1013,7 @@ class GameObj(object):
 			self.item = Item(self, weight = 0.5, depth_level = 2, itemtype = 'trinket')
 
 
-		############################################################################
-		#########################   ABILITY  DEFINITIONS(for player)   #############
-		############################################################################
+
 
 
 
@@ -1104,7 +1041,9 @@ class Player(GameObj):#player is inherited because it's easier since it has one 
 		self.lvl = 1
 		#self.abilities
 
-
+		############################################################################
+		#########################   ABILITY  DEFINITIONS               #############
+		############################################################################
 
 	def abl_kicklaunch(self): #return true if went through, false if its cancelled
 		target = random_adj_target()
@@ -1125,18 +1064,40 @@ class Player(GameObj):#player is inherited because it's easier since it has one 
 
 	def abl_fling_trinket(self, chosen_trinket = None):
 		if not chosen_trinket: chosen_trinket = inventory_menu('Choose a trinket to throw:', itemtype = 'trinket') #so you can arrive here through 't' throw or 'a' ability > fling trinket..... remember inventory_menu returns None if it's cancelled
-		if not chosen_trinket: return None
+		if not chosen_trinket: return
 		
 	def abl_consume_trinket(self, chosen_trinket = None):
-		if not chosen_trinket: chosen_trinket = inventory_menu('Choose a trinket to throw:', itemtype = 'trinket') #so you can arrive here through 't' throw or 'a' ability > fling trinket..... remember inventory_menu returns None if it's cancelled
+		if not chosen_trinket: chosen_trinket = inventory_menu('Choose a trinket to consume:', itemtype = 'trinket') #so you can arrive here through 't' throw or 'a' ability > fling trinket..... remember inventory_menu returns None if it's cancelled
 
 	def abl_toggle_drawing(self):
 		if 'drawing' not in [stati.name for stati in self.fighter.status]:
 			player.fighter.receive_status('drawing', 0)
 			director.update(action = 'start drawing')
+			drawing = RitualDraw(self.x, self.y)
+			drawdir.drawinglist.append(drawing)
+			message("You start chanting and drawing the runes of mystery.")
+
+		elif director.action == "start drawing":#activating and deactivating right away draws glyphs rather than lines, this block is cleaning up activation in this event
+			active_drawing = filter(lambda x: not x.concluded, drawdir.drawinglist)
+			drawdir.drawinglist.remove(active_drawing[0]) #adding a glyph does not add a new drawing to drawdir, it just modifies one tile in the main body of another drawing
+			wanted_status = filter(lambda x: x.name == 'drawing', self.fighter.status) #little bit of copypasted code, but this way is more readable i think
+			wanted_status[0].terminate() #there can only be one drawing status online anyway - tying it to a single toggle key makes sure of it
+
+			playertile = gamemap[player.x][player.y] #just so it's easier to write and read - points to the tile the player is standing on
+			if (playertile.special and playertile.special.name not in ['drawing', 'glyph']) or not playertile.special:
+				message('You can only draw a glyph on top of ritual lines.')
+				return 'didnt-take-turn'
+			else:
+				director.update(action = 'draw glyph')
+				if glyph_draw_menu() == 'didnt-take-turn': return 'didnt-take-turn'
+				return
+
 		else:
 			wanted_status = filter(lambda x: x.name == 'drawing', self.fighter.status)
-			wanted_status[0].terminate()
+			wanted_status[0].terminate() #there can only be one drawing status online anyway - tying it to a single toggle key makes sure of it
+			wanted_drawing = filter(lambda x: not x.concluded, drawdir.drawinglist) #only one drawing should be "not concluded" at any one time. It means the main body is still in the process of being drawn - glyphs are only character changes and are checked on activation
+			wanted_drawing[0].concluded = True  #it's a closed loop together with the drawing status so there should be no problems
+			return 'didnt-take-turn'
 
 
 
@@ -1266,14 +1227,19 @@ def play_game():
 
 
 		libtcod.sys_check_for_event(libtcod.EVENT_KEY_PRESS,key,mouse)
-		render_all()
+		
 
 		for object in objects:
 			if object.fighter and len(object.fighter.status) > 0:
 				for stati in object.fighter.status:
 					stati.activate()
 
+		render_all()			
+
 		player_action = handle_keys()
+
+		graphical.render_effects() #render effects have to be here because effects depend on object locatons, leading to wrong-looking offsets
+
 		if game_state == 'playing' and player_action != 'didnt-take-turn':  # remember to have checks for timed buffs and things like that here, otherwise things will become shitty
 			for object in objects:
 				if object.ai:
@@ -1319,7 +1285,7 @@ def get_equipped_in_slot(slot):  #returns the equipment in a slot, or None if it
 
 
 
-	return None
+	return
 
 def get_all_equipped(obj):  #returns a list of equipped items
 	if obj == player:
@@ -1377,7 +1343,7 @@ def handle_keys():
 			player_move_or_attack(1,1)
 
 		elif key.vk == libtcod.KEY_KP5:
-			pass
+			director.update(action = 'wait')
 
 		elif key_char == 'g':
 				for obj in objects:
@@ -1389,18 +1355,17 @@ def handle_keys():
 		elif key_char == 'd' and not key.shift:
 			#show the inventory; if an item is selected, drop it
 			chosen_item = inventory_menu('Press the key next to an item to drop it, or any other to cancel.\n')
-			if chosen_item is not None:
+			if chosen_item:
 				chosen_item.drop()
 			else: return 'didnt-take-turn'
 
 		elif key_char == 'd' and key.shift:
-			player.abl_toggle_drawing()
+			if player.abl_toggle_drawing() == "didnt-take-turn": return 'didnt-take-turn'
 
 		elif key_char == 'e':
 			if key.shift: # E (SHIFT E) prompts you to equip an item
 				chosen_equipment = action_equip_menu('Choose an item to equip:\n')
 				if chosen_equipment is None:
-					msgbox('Unable to equip.')
 					return 'didnt-take-turn'
 				else:
 					chosen_equipment.equip('player')
@@ -1469,14 +1434,14 @@ def check_if_node_leveled(tree, node_s):
 def ability_menu(): #returns ability name if ability goes through, None if its cancelled
 	ability_choices = [ability for ability in player.abilities]
 	if ability_choices != []:
-		choice = menu('Press a key for an ability, or any other to cancel.', ability_choices, SCREEN_WIDTH/2)
+		choice = menu('Choose an ability.', ability_choices, SCREEN_WIDTH/2)
 	else: 
 		msgbox("You don't have any abilities yet.")
-		return None
+		return
 
 	if choice is not None: 
 		return activate_ability(ability_choices[choice]) #activates ability if its not cancelled, then returns ability name or None depending on whether it got cancelled
-	else: return None
+	else: return
 
 def activate_ability(abil_name): #returns abil name if not cancelled, None otherwise
 	completed = False
@@ -1489,9 +1454,25 @@ def activate_ability(abil_name): #returns abil name if not cancelled, None other
 
 	if completed == True: return abil_name
 
+def glyph_draw_menu():
+	#glyph_choices = something something from rtree
+	glyph_choices = ['&' , '$']
+	choice = menu('Choose a glyph to draw.', glyph_choices, SCREEN_WIDTH/2)
+
+	if choice is not None:
+		draw_glyph(glyph_choices[choice])
+	else: return 'didnt-take-turn'
+
+def draw_glyph(glyph):
+	glyphtile = gamemap[player.x][player.y]
+	if glyphtile.special and glyphtile.special.name == 'drawing':
+		glyphtile.special.char = glyph
+		glyphtile.special.name = 'glyph'
+	else: message("You can't draw a glyph here.")
 
 
-			
+
+
 
 
 
@@ -1628,7 +1609,6 @@ def render_all():
 	#blits the content of the 'con' console to the root console
 	libtcod.console_blit(con, 0, 0, CAMERA_WIDTH, CAMERA_HEIGHT, 0, 0, 0)
 
-	graphical.render_effects()
 
 
 	libtcod.console_set_default_background(panel, libtcod.black)
@@ -1866,7 +1846,10 @@ def initialize_fov():
 
 
 def inventory_menu(header, itemtype = None):
-	inv = filter(lambda x: x.equipment not in get_all_equipped(player) and x.item.itemtype == itemtype, inventory)
+	inv = filter(lambda x: not x.equipment or x.equipment not in get_all_equipped(player), inventory)
+
+	if itemtype:
+		inv = filter(lambda x: x.item.itemtype == itemtype, inv)
 
 	if len(inv) == 0:
 		options = ['You have NOTHING!']
@@ -1877,26 +1860,25 @@ def inventory_menu(header, itemtype = None):
 				options.append(text)
 
 	index = menu(header, options, INVENTORY_WIDTH)
-
-	if index is None or len(inv) == 0: return None
+	if index is None or len(inv) == 0: return
 	return inv[index].item # RETURNS ITEM COMPONENT
 
 def action_equip_menu(header):
 	options = []
 	output_item = []
-	inv = filter(lambda x: x.equipment, inventory)
+	inv = filter(lambda x: x.equipment != None, inventory)
 	inv = filter(lambda x: x.equipment not in get_all_equipped(player), inv)
 	for item in inv:
-		if item.equipment and not item.equipment.is_equipped:
-			options.append(item.item.dname)
-			output_item.append(item)
+		options.append(item.item.dname)
+		output_item.append(item)
 
 	if len(options) == 0:
-		return None
+		msgbox('Nothing to equip.')
+		return
 	else:
 		index = menu(header, options, INVENTORY_WIDTH)
 
-	if index is None: return None
+	if index is None: return
 	return output_item[index].equipment
 
 def equipment_menu(header):
@@ -1914,7 +1896,7 @@ def equipment_menu(header):
 
 	index = menu(header, options, INVENTORY_WIDTH)
 
-	if index is None: return None
+	if index is None: return
 	elif outputitem[index] == 'empty': return 'empty'
 	elif outputitem[index] != 'empty': return outputitem[index] # RETURNS EQUIPMENT COMPONENT INSTANCE
 
@@ -1988,7 +1970,7 @@ def menu(header, options, width):
 	libtcod.console_blit(window,0,0,0,0,0,x,y,1.0,1.0)
 	if index >= 0 and index < len(options): return index
 
-	return None
+	return
 
 
 def msgbox(message, width=50):
@@ -2075,7 +2057,7 @@ def random_adj_target():
 		if obj.distance_to(player) < 2 and obj.fighter and not obj == player: adjacents.append(obj)
 
 	if adjacents == []: 
-		return None
+		return
 	else: 
 		choice = libtcod.random_get_int(0,0,len(adjacents)-1)
 
@@ -2088,7 +2070,7 @@ def target_monster(max_range=None):
 	while True:
 		(x, y) = target_tile(max_range)
 		if x is None:  #player cancelled
-			return None
+			return
 
 	
 		for obj in objects:
@@ -2109,15 +2091,17 @@ def clear_game():
 	clear_screen()
 
 def new_game():
-	global player, game_msgs, game_state, inventory, dungeon_level, namekeeper, colorkeeper, camera, director
+	global player, game_msgs, game_state, inventory, dungeon_level, namekeeper, colorkeeper, camera, director, drawdir
 
 	player = Player()
 	dungeon_level = 1
-	colorkeeper = {}
 	director = PlayerActionReport()
+	drawdir = DrawingDir()
 	inventory = []
 	namekeeper = {}
+	colorkeeper = {}
 	game_msgs = []
+
 
 	make_map()
 
@@ -2200,10 +2184,114 @@ def pass_node_requirements(node):
 		if ctree.level >= 1: return True
 	else: return False
 
+def get_multiattack_number():
+	attackn = 0
+	for equip in get_all_equipped(player):
+		for enchant in equip.special.enchantlist: 
+			if enchant.name == 'multiattack': attackn += enchant.value
 
-libtcod.console_set_custom_font('Terminus.png', libtcod.FONT_LAYOUT_ASCII_INROW)
+	attackn *= player.stats['agility']/5
+	attackn += 1
+######################
+	if uniform(math.floor(attackn), math.ceil(attackn)) > attackn:#
+		return int(math.floor(attackn))                           # if attackn is not an integer(as it usually wont be), this bit of code just takes a uniform probability on the decimal part
+	else: return int(math.ceil(attackn))     
+
+def drawing_function(self):
+	if director.action == 'move':
+		x, y = director.x1, director.y1
+		prevtile = None
+		if gamemap[x][y].special and gamemap[x][y].special.name == 'drawing': prevtile = gamemap[x][y].special.char
+
+		character = determine_drawchar(prevtile)
+		drawntile = SpTile(name = 'drawing', char = character, foreground = libtcod.white)
+		
+		if not gamemap[x][y].special: 
+			gamemap[x][y].special = drawntile
+			drawing = filter(lambda x: not x.concluded, drawdir.drawinglist)
+			drawing[0].add_drawntile(gamemap[x][y])
+
+def determine_orientation(dxl, dyl):
+	orient = ''
+	if dxl == 1 and dyl == 0:
+		orient = 'from w'
+	elif dxl == 1 and dyl == -1:
+		orient = 'from sw'
+	elif dxl == 1 and dyl == 1:
+		orient = 'from nw'
+
+	elif dxl == -1 and dyl == 0:
+		orient = 'from e'
+	elif dxl == -1 and dyl == -1:
+		orient = 'from se'
+	elif dxl == -1 and dyl == 1:
+		orient = 'from ne'
+
+	elif dxl == 0 and dyl == 1:
+		orient = 'from n'
+	elif dxl == 0 and dyl == -1:
+		orient = 'from s'
+
+	return orient
+
+def determine_drawchar(prevchar):
+
+	if director.action == 'move': x1, x2, y1, y2 = director.x1, director.x2, director.y1, director.y2
+	lastmove = get_last_move_action()
+	dxl, dyl = graphical.get_increments(lastmove['x1'], lastmove['y1'], lastmove['x2'], lastmove['y2'])
+	dx, dy = graphical.get_increments(x1, y1, x2, y2)
+	lorient = determine_orientation(dxl, dyl) #last orientation
+	corient = determine_orientation(dx, dy)	#current orientation
+	char = 'E' #for error
+	if director.action == 'move':
+		if (lorient == 'from w' and corient == 'from s') or (lorient == 'from n' and corient == 'from e') : char = 180
+		elif (lorient == 'from w' and corient == 'from n') or (lorient == 'from s' and corient == 'from e'): char = 183
+		elif (lorient == 'from s' and corient == 'from w') or (lorient == 'from e' and corient == 'from n'): char = 182 #these are (rounded) 90deg corners
+		elif (lorient == 'from n' and corient == 'from w') or (lorient == 'from e' and corient == 'from s'): char = 181
+
+		elif (lorient == 'from sw' and corient == 'from w') or (lorient == 'from e' and corient == 'from ne'): char = 200
+		elif (lorient ==  'from nw' and corient == 'from w') or (lorient == 'from e' and corient == 'from se'): char = 199
+		elif (lorient ==  'from w' and corient == 'from sw') or (lorient == 'from ne' and corient == 'from e'): char = 198
+		elif (lorient ==  'from w' and corient == 'from nw') or (lorient == 'from se' and corient == 'from e'): char = 201 #135deg corners (center - diag)
+		elif (lorient ==  'from n' and corient == 'from ne') or (lorient == 'from sw' and corient == 'from s'): char = 202
+		elif (lorient ==  'from nw' and corient == 'from n') or (lorient == 'from s' and corient == 'from se'): char = 205
+		elif (lorient ==  'from ne' and corient == 'from n') or (lorient == 'from s' and corient == 'from sw'): char = 204
+		elif (lorient ==  'from n' and corient == 'from nw') or (lorient == 'from se' and corient == 'from s'): char = 203
+
+
+		elif dyl == 0 and dy == 0: char = 196 #straight lines :horizontal
+		elif dxl == 0 and dx == 0: char = 179 #vertical
+
+		elif (lorient ==  'from se' and corient == 'from se') or (lorient == 'from nw' and corient == 'from nw'): char = 189 #diagonals
+		elif (lorient ==  'from ne' and corient == 'from ne') or (lorient == 'from sw' and corient == 'from sw'): char = 188
+
+		elif (lorient ==  'from se' and corient == 'from ne') or (lorient == 'from sw' and corient == 'from nw'): char = 211
+		elif (lorient ==  'from nw' and corient == 'from sw') or (lorient == 'from ne' and corient == 'from se'): char = 209
+		elif (lorient ==  'from ne' and corient == 'from nw') or (lorient == 'from se' and corient == 'from sw'): char = 210 #90deg diagonal 'beaks'
+		elif (lorient ==  'from nw' and corient == 'from ne') or (lorient == 'from sw' and corient == 'from se'): char = 212
+
+		elif (lorient ==  'from w' and corient == 'from ne') or (lorient == 'from sw' and corient == 'from e'): char = 256
+		elif (lorient ==  'from sw' and corient == 'from n') or (lorient == 'from s' and corient == 'from ne'): char = 257
+		elif (lorient ==  'from s' and corient == 'from nw') or (lorient == 'from se' and corient == 'from n'): char = 262
+		elif (lorient ==  'from e' and corient == 'from nw') or (lorient == 'from se' and corient == 'from w'): char = 263
+		elif (lorient ==  'from e' and corient == 'from sw') or (lorient == 'from ne' and corient == 'from w'): char = 261
+		elif (lorient ==  'from n' and corient == 'from sw') or (lorient == 'from ne' and corient == 'from s'): char = 260  #45deg diagonal 'beaks'
+		elif (lorient ==  'from nw' and corient == 'from s') or (lorient == 'from n' and corient == 'from se'): char = 259
+		elif (lorient ==  'from nw' and corient == 'from e') or (lorient == 'from w' and corient == 'from se'): char = 258
+# I hope to eventually come up with a non-retarded way to do this, perhaps involving binary representations
+	return char
+
+def get_last_move_action():
+	for i in range(len(director.recorder)-2, 0, -1):
+		if director.recorder[i]['action'] == 'move':
+			return director.recorder[i]
+
+
+
+libtcod.console_set_custom_font('Terminus.png', libtcod.FONT_LAYOUT_ASCII_INROW, nb_char_horiz=16, nb_char_vertic=17)
 libtcod.console_init_root(SCREEN_WIDTH, SCREEN_HEIGHT, 'python/libtcod tutorial', False)
 libtcod.sys_set_fps(LIMIT_FPS)
+libtcod.console_map_ascii_codes_to_font(256, 16, 0, 16)
 con = libtcod.console_new(CAMERA_WIDTH, CAMERA_HEIGHT)
 panel = libtcod.console_new(SCREEN_WIDTH, PANEL_HEIGHT)
 main_menu()
