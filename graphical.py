@@ -65,7 +65,7 @@ class LineHandler(EffectCon):
 
 
 		if self.char == '': self.char = determine_projchar(self.origin, self.end)#can't put functions in the definition line apparently, so its here instead
-
+		
 		libtcod.console_set_default_foreground(self.console, self.color)
 		for point in self.line:
 			libtcod.console_put_char(self.console,int(point.x), int(point.y), self.char, libtcod.BKGND_NONE)

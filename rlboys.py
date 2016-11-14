@@ -71,6 +71,17 @@ class DrawingDir(object): #singleton drawdir
 	def __init__(self): #keeps record of ritual drawings on the ground that are not yet activated, since I want the player to be able to have multiple of them set up at once
 		self.drawinglist = []
 
+	@property
+	def active_drawing(self):
+		try:
+			active = filter(lambda x: x.concluded == False, self.drawinglist)
+			return active[0]
+		except: 
+			print '####################################################'
+			print 'WARNING: Call for active drawing that did not exist'
+			print '####################################################'
+	
+
 
 class RitualDraw(object): #each drawing main body is represented by this
 	def __init__(self, originx, originy):
@@ -79,19 +90,108 @@ class RitualDraw(object): #each drawing main body is represented by this
 		self.originy = originy
 		self.drawntile_list = []
 		self.concluded = False
+		self.spent = False
+
+	def get_glyphs(self):
+		glyphtile_list = filter(lambda tile: tile.special.name == 'glyph', self.drawntile_list)
+		print glyphtile_list
+		return glyphtile_list
 
 
 	def add_drawntile(self, tile): #list of gamemap tiles involved
 		self.drawntile_list.append(tile)
 
+	def evoke(self):
+		self.drawntile_list = list(set(self.drawntile_list)) #glyphs were duplicating if they were placed in junctions of merged drawings for some reason, this fixes it
+		shape = self.determine_shape()
+		glyphs = self.get_glyphs()
+
+		for tile in self.drawntile_list:
+			tile.special.char = '*'
+
+	def determine_shape(self): #what an ugly piece of code
+		width, height = self.get_dimensions()
+		aoe_cross = True
+		focus_cross = True
+		diamond = True
+		nonglyphs = filter(lambda x: x.special.name == 'drawing', self.drawntile_list)
+		charlist = map(lambda x: x.special.char, nonglyphs)
+		if width == height: #only for this type of ritual drawing
+
+			for char in charlist: #first, filter by size and characters
+				if char not in [15, 196, 197, 179]:
+					aoe_cross = False
+				if char not in [15, 188, 189, 190]:
+					focus_cross = False
+				if char not in [15, 209, 210, 211, 212, 190, 188, 189]:
+					diamond = False
+
+			for tile in self.drawntile_list: #then, find a central tile
+				x, y = tile.x, tile.y
+				center_tile = None
+
+				if (gamemap[x+1][y] in self.drawntile_list) and (gamemap[x-1][y] in self.drawntile_list) and (gamemap[x][y+1] in self.drawntile_list) and (gamemap[x][y-1] in self.drawntile_list): # plus-shaped central tile
+					center_tile = tile
+					diamond = False
+					focus_cross = False
+					break
+
+				elif (gamemap[x+1][y+1] in self.drawntile_list) and (gamemap[x+1][y-1] in self.drawntile_list) and (gamemap[x-1][y+1] in self.drawntile_list) and (gamemap[x-1][y-1] in self.drawntile_list): # 'X shaped central tile'
+					center_tile = tile
+					aoe_cross = False
+					diamond = False
+					break
+
+			if center_tile is None:
+				aoe_cross = False
+				focus_cross = False
+
+			else: #check for symmetry
+				left_of_center = filter(lambda tile: tile.x < center_tile.x, self.drawntile_list)
+				right_of_center = filter(lambda tile: tile.x > center_tile.x, self.drawntile_list)
+				above_center = filter(lambda tile: tile.y < center_tile.y, self.drawntile_list)
+				below_center = filter(lambda tile: tile.y > center_tile.y, self.drawntile_list)
+				if not len(left_of_center) == len(right_of_center) == len(above_center) == len(below_center):
+					aoe_cross = False
+					focus_cross = False
+
+		else: #still have to check for diamond symmetry, but i have an idea for this: get the center for the diamond's bounding box and project horizontal and vertical lines from it, dividing the whole thing in 4 sections. If every section has the same num of tiles, it passes the test
+			aoe_cross = False
+			focus_cross = False
+			diamond = False
+
+		if aoe_cross == True and focus_cross == False and diamond == False: return 'aoe cross'
+		elif aoe_cross == False and focus_cross == False and diamond == True: return 'diamond'
+		elif aoe_cross == False and focus_cross == True and diamond == False: return 'focus cross'
+
+		return 'linear'
+
+			
 
 
+		
 
+	def merge(self, inactive_drawing):
+		global drawdir
+
+		duplicates_removed = filter(lambda x: x not in self.drawntile_list, inactive_drawing.drawntile_list)
+		self.drawntile_list += duplicates_removed
+		drawdir.drawinglist.remove(inactive_drawing)
+
+	def get_dimensions(self):
+		xcoords = map(lambda tile: tile.x, self.drawntile_list)
+		ycoords = map(lambda tile: tile.y, self.drawntile_list)
+		height = (max(ycoords) - min(ycoords)) + 1
+		width = (max(xcoords) - min(xcoords)) + 1
+
+		return width, height
+
+
+		
 class Point:
 	def __init__(self, x, y):
 		self.x = x
 		self.y = y
-
 
 
 class PlayerActionReport(object): #singleton, director
@@ -532,27 +632,31 @@ class StatusEffect(object): #TODO: STACKING BEHAVIOUR FOR STATUS EFFECTS
 		self.duration = duration
 		if duration == 0: self.duration = -1
 		self.affected = affected
+		self.startfunction()
 
 	def activate(self):
 		if self.duration == 0:
 			self.terminate()
 		else:
-			self.status_stepfunction()
+			self.stepfunction()
 
 	def terminate(self):
 		self.affected.status.remove(self)
 
-	def status_startfunction(self):
+	def startfunction(self):
 		if self.name == 'maim':
 			return graphical.FloatingText(self.affected.owner, self.name, libtcod.violet)
 
 
-	def status_stepfunction(self):
+	def stepfunction(self):
 		if self.name == 'drawing': 
 			drawing_function(self)
-
-
 		self.duration -= 1
+
+class GraphicalStatus(StatusEffect):
+	pass
+
+
 
 
 
@@ -653,7 +757,7 @@ class Fighter:
 		bonus = sum(equipment.max_hp_bonus for equipment in get_all_equipped(self.owner))
 		return self.base_max_hp + bonus
 
-                     # exemple: if attackn == 3.4, it does 3 attacks always and has a 40% chance of doing an additional attack for a total of 4
+					 # exemple: if attackn == 3.4, it does 3 attacks always and has a 40% chance of doing an additional attack for a total of 4
 
 class Dmg:
 	def __init__(self, multiplicative, multiplier = 1, flat = 0):
@@ -746,7 +850,7 @@ class Camera(object):
 #                                                       
 		if player.y > centery + ydiff: return 'yreset'  
 		elif player.y < centery - ydiff: return 'yreset'
-                                                        
+														
 
 		return False
 
@@ -789,11 +893,11 @@ class Camera(object):
 
 	@property
 	def x2(self):
-	    return self.x + self.width
+		return self.x + self.width
 
 	@property
 	def y2(self):
-	    return self.y + self.height
+		return self.y + self.height
 	
 	
 
@@ -831,14 +935,23 @@ class SpTile:
 			for effect in self.onwalk_effect:                                                   # 
 				if effect == 'damage': walker.fighter.take_damage(self.onwalk_effect['damage']) # 
 
+
 class Tile:
-	def __init__(self, blocked, block_sight = None, special = None):
+	def __init__(self, blocked, block_sight = None, special = None, x = 0, y = 0):
 		self.blocked = blocked
 		self.explored = False
 		self.special = special
+		self.x = x
+		self.y = y
 
 		#blocks sight by default if blocks movement (standard wall)
 		if block_sight is None:	self.block_sight = blocked
+
+	def get_drawing(self):
+		for drawing in drawdir.drawinglist:
+			if self in [tile for tile in drawing.drawntile_list]: #gets the drawing from the chosen tile
+				wanted_drawing = drawing
+				return wanted_drawing
 		
 
 
@@ -1075,11 +1188,10 @@ class Player(GameObj):#player is inherited because it's easier since it has one 
 			director.update(action = 'start drawing')
 			drawing = RitualDraw(self.x, self.y)
 			drawdir.drawinglist.append(drawing)
-			message("You start chanting and drawing the runes of mystery.")
+			message("You start chanting and drawing the runes of mystery...", libtcod.dark_violet)
 
 		elif director.action == "start drawing":#activating and deactivating right away draws glyphs rather than lines, this block is cleaning up activation in this event
-			active_drawing = filter(lambda x: not x.concluded, drawdir.drawinglist)
-			drawdir.drawinglist.remove(active_drawing[0]) #adding a glyph does not add a new drawing to drawdir, it just modifies one tile in the main body of another drawing
+			drawdir.drawinglist.remove(drawdir.active_drawing) #adding a glyph does not add a new drawing to drawdir, it just modifies one tile in the main body of another drawing
 			wanted_status = filter(lambda x: x.name == 'drawing', self.fighter.status) #little bit of copypasted code, but this way is more readable i think
 			wanted_status[0].terminate() #there can only be one drawing status online anyway - tying it to a single toggle key makes sure of it
 
@@ -1092,11 +1204,13 @@ class Player(GameObj):#player is inherited because it's easier since it has one 
 				if glyph_draw_menu() == 'didnt-take-turn': return 'didnt-take-turn'
 				return
 
-		else:
+		else:#toggle off event - adds the ending glyph where the player is standing before toggling off
+			director.update(action = 'stop drawing', takes_turn = False)
 			wanted_status = filter(lambda x: x.name == 'drawing', self.fighter.status)
+			wanted_status[0].stepfunction()
 			wanted_status[0].terminate() #there can only be one drawing status online anyway - tying it to a single toggle key makes sure of it
-			wanted_drawing = filter(lambda x: not x.concluded, drawdir.drawinglist) #only one drawing should be "not concluded" at any one time. It means the main body is still in the process of being drawn - glyphs are only character changes and are checked on activation
-			wanted_drawing[0].concluded = True  #it's a closed loop together with the drawing status so there should be no problems
+
+			drawdir.active_drawing.concluded = True  #it's a closed loop together with the drawing status so there should be no problems
 			return 'didnt-take-turn'
 
 
@@ -1229,11 +1343,6 @@ def play_game():
 		libtcod.sys_check_for_event(libtcod.EVENT_KEY_PRESS,key,mouse)
 		
 
-		for object in objects:
-			if object.fighter and len(object.fighter.status) > 0:
-				for stati in object.fighter.status:
-					stati.activate()
-
 		render_all()			
 
 		player_action = handle_keys()
@@ -1243,7 +1352,10 @@ def play_game():
 		if game_state == 'playing' and player_action != 'didnt-take-turn':  # remember to have checks for timed buffs and things like that here, otherwise things will become shitty
 			for object in objects:
 				if object.ai:
-					object.ai.take_turn()
+					object.ai.take_turn()	
+				if object.fighter and len(object.fighter.status) > 0:
+					for stati in object.fighter.status:
+						if not isinstance(stati, GraphicalStatus): stati.activate()
 
 
 		if player_action == 'exit':
@@ -1345,7 +1457,8 @@ def handle_keys():
 		elif key.vk == libtcod.KEY_KP5:
 			director.update(action = 'wait')
 
-		elif key_char == 'g':
+
+		elif key_char == 'g': #(g)et
 				for obj in objects:
 					if obj.x == player.x and obj.y == player.y and obj.item:
 						if obj.item.pick_up(): pass
@@ -1353,39 +1466,54 @@ def handle_keys():
 
 
 		elif key_char == 'd' and not key.shift:
-			#show the inventory; if an item is selected, drop it
+			#show the inventory; if an item is selected, (d)rop it
 			chosen_item = inventory_menu('Press the key next to an item to drop it, or any other to cancel.\n')
 			if chosen_item:
 				chosen_item.drop()
 			else: return 'didnt-take-turn'
 
-		elif key_char == 'd' and key.shift:
+		elif key_char == 'd' and key.shift:#(D)raw
 			if player.abl_toggle_drawing() == "didnt-take-turn": return 'didnt-take-turn'
 
-		elif key_char == 'e':
-			if key.shift: # E (SHIFT E) prompts you to equip an item
-				chosen_equipment = action_equip_menu('Choose an item to equip:\n')
-				if chosen_equipment is None:
-					return 'didnt-take-turn'
-				else:
-					chosen_equipment.equip('player')
+		elif key_char == 'e' and key.shift:#(E)voke drawing
+			if 'drawing' in [stati.name for stati in player.fighter.status]:
+				message("Can't evoke while still drawing.")
+				return 'didnt-take-turn'
 
-			else: # e shows equipped items
-				chosen_item = equipment_menu('Press a key for more options, or any other to cancel.\n')
-				if chosen_item is None:
-					return 'didnt-take-turn'
-				elif chosen_item == 'empty':
-					msgbox('No item there! Press E to equip something.')
-					return 'didnt-take-turn'
-				else:
-					chosen_action = chosen_item.equip_options()
-					if chosen_action == 'examine': return 'didnt-take-turn'
+			tx, ty = target_tile()
+			if not tx and not ty: return 'didnt-take-turn'
 
-		elif key_char == 'z':
+			ttile = gamemap[tx][ty]
+			if ttile.special and ttile.special.name in ['drawing','glyph']: # chose a tile that is (in) a drawing
+				wanted_drawing = ttile.get_drawing()
+				wanted_drawing.evoke()
+			else:
+				message('Nothing to evoke there.')
+				return 'didnt-take-turn'
+
+		elif key_char == 'w': #(w)ield/wear
+			chosen_equipment = action_equip_menu('Choose an item to wield/wear:\n')
+			if chosen_equipment is None:
+				return 'didnt-take-turn'
+			else:
+				chosen_equipment.equip('player')
+
+		elif key_char == 'e' and not key.shift: # show (e)quipment
+			chosen_item = equipment_menu('Press a key for more options, or any other to cancel.\n')
+			if chosen_item is None:
+				return 'didnt-take-turn'
+			elif chosen_item == 'empty':
+				msgbox('No item there! Press E to equip something.')
+				return 'didnt-take-turn'
+			else:
+				chosen_action = chosen_item.equip_options()
+				if chosen_action == 'examine': return 'didnt-take-turn'
+
+		elif key_char == 'a': #(a)bility
 			abil = ability_menu()
 			if not abil: return 'didnt-take-turn'
 
-		elif key_char == 'a':
+		elif key_char == 'u': #(u)se item
 			chosen_item = inventory_menu('Press the key next to an item to use it.\n')
 			if chosen_item is not None:
 				chosen_item.use()
@@ -1393,24 +1521,27 @@ def handle_keys():
 				return 'didnt-take-turn'
 
 		elif key_char == 'i':
-			#show the inventory
+			#show the (i)nventory
 			chosen_item = inventory_menu('Press the key next to an item for more options, or any other to cancel.\n')
 			if chosen_item is not None:
 				chosen_action = chosen_item.item_options()
 				if chosen_action == 'examine': return 'didnt-take-turn'
 			else: return 'didnt-take-turn'
-		elif chr(key.c) == ']':
-			raise ValueError(director.action)
+
+		# elif chr(key.c) == ']': #debug
+		# 	print 'debug messages'
+
 		else:
-			if key_char == '.' and key.shift:
+			if key_char == '.' and key.shift: #>
 				if player.x == stairs.x and player.y == stairs.y:
 					next_level()
+
 				else:
 					message("You can't go down here!")
 
 
 			elif key_char == 'c':
-				#show character information
+				#show (c)haracter information
 				level_up_xp = LEVEL_UP_BASE + player.lvl * LEVEL_UP_FACTOR
 				msgbox('Character Information\n\nLevel: ' + str(player.lvl) + '\nExperience: ' + str(player.fighter.xp) +
 					'\nExperience to level up: ' + str(level_up_xp) + '\n\nMaximum HP: ' + str(player.fighter.max_hp) +
@@ -1468,7 +1599,7 @@ def draw_glyph(glyph):
 	if glyphtile.special and glyphtile.special.name == 'drawing':
 		glyphtile.special.char = glyph
 		glyphtile.special.name = 'glyph'
-	else: message("You can't draw a glyph here.")
+	else: message("You can't draw a glyph here.", libtcod.red)
 
 
 
@@ -1479,7 +1610,7 @@ def draw_glyph(glyph):
 def make_map():
 	global gamemap, objects, stairs, player
 
-	gamemap = [[Tile(True)
+	gamemap = [[Tile(True, x=x, y=y)
 		for y in range(MAP_HEIGHT)]
 			for x in range(MAP_WIDTH)]
 
@@ -1594,8 +1725,10 @@ def render_all():
 		fov_recompute = False
 		libtcod.map_compute_fov(fov_map, player.x, player.y, TORCH_RADIUS, FOV_LIGHT_WALLS, FOV_ALGO)
 
-	
-
+	for object in objects:
+		if object.fighter and len(object.fighter.status) > 0:
+			for stati in object.fighter.status:
+				if isinstance(stati, GraphicalStatus): stati.activate()
 				
 	camera.camera_render()
 
@@ -1719,10 +1852,10 @@ def generate_item(name, x, y): #RETURNS HIGHEST OBJECT, NOT ITEM OR EQUIP COMPON
 
 	return item
 
-def generate_tile(name):
+def generate_tile(name, x, y):
 	if name == 'jagged rock':
 		special_component = SpTile(name, ',', libtcod.white, libtcod.black, onwalk_effect = {'damage':2})
-		tile = Tile(False, None, special_component)
+		tile = Tile(False, None, special_component, x, y)
 	return tile
 
 def generate_monster(name, x, y):
@@ -2026,7 +2159,7 @@ def target_tile(max_range = None):
 
 			targeter.clear()
 			objects.remove(targeter)
-			return (targeter.x, targeter.y)
+			return targeter.x, targeter.y
 
 		elif (keyb.vk == libtcod.KEY_ENTER and not libtcod.map_is_in_fov(fov_map, targeter.x, targeter.y)):
 			message('You cannot target there!', libtcod.grey)
@@ -2035,7 +2168,7 @@ def target_tile(max_range = None):
 		else:
 			targeter.clear()
 			objects.remove(targeter)
-			return (None, None)
+			return None, None
 
 def closest_monster(max_range):
 	#find closest enemy, up to a maximum range, and in the player's FOV
@@ -2068,7 +2201,7 @@ def random_adj_target():
 def target_monster(max_range=None):
 	
 	while True:
-		(x, y) = target_tile(max_range)
+		x, y = target_tile(max_range)
 		if x is None:  #player cancelled
 			return
 
@@ -2198,18 +2331,27 @@ def get_multiattack_number():
 	else: return int(math.ceil(attackn))     
 
 def drawing_function(self):
-	if director.action == 'move':
-		x, y = director.x1, director.y1
-		prevtile = None
-		if gamemap[x][y].special and gamemap[x][y].special.name == 'drawing': prevtile = gamemap[x][y].special.char
 
+	if director.action in ['move', 'stop drawing']:
+		x, y = director.x1, director.y1
+		target_tile = gamemap[x][y]
+
+		prevtile = None
+		if target_tile.special and target_tile.special.name in ['drawing', 'glyph']: #drawing on top of another drawing
+			prevtile = target_tile.special.char
+			if target_tile not in drawdir.active_drawing.drawntile_list: #drawing over a drawing that is "concluded" ie is already drawn (toggled off)
+				inactive_drawing = target_tile.get_drawing()
+				drawdir.active_drawing.merge(inactive_drawing)
+	
 		character = determine_drawchar(prevtile)
 		drawntile = SpTile(name = 'drawing', char = character, foreground = libtcod.white)
-		
-		if not gamemap[x][y].special: 
+
+		if not gamemap[x][y].special or (gamemap[x][y].special and gamemap[x][y].special.name == 'drawing'):
 			gamemap[x][y].special = drawntile
-			drawing = filter(lambda x: not x.concluded, drawdir.drawinglist)
-			drawing[0].add_drawntile(gamemap[x][y])
+			drawing = drawdir.active_drawing
+			drawing.add_drawntile(gamemap[x][y])
+
+
 
 def determine_orientation(dxl, dyl):
 	orient = ''
@@ -2235,14 +2377,25 @@ def determine_orientation(dxl, dyl):
 	return orient
 
 def determine_drawchar(prevchar):
+	char = 'E' # for error
+	if director.recorder[-2]['action'] == 'start drawing': #recorder -1 = current director = the current action
+		char = 15
+		return char
 
-	if director.action == 'move': x1, x2, y1, y2 = director.x1, director.x2, director.y1, director.y2
-	lastmove = get_last_move_action()
-	dxl, dyl = graphical.get_increments(lastmove['x1'], lastmove['y1'], lastmove['x2'], lastmove['y2'])
-	dx, dy = graphical.get_increments(x1, y1, x2, y2)
-	lorient = determine_orientation(dxl, dyl) #last orientation
-	corient = determine_orientation(dx, dy)	#current orientation
-	char = 'E' #for error
+	if director.action == 'stop drawing': char = 15
+
+	
+		
+
+	elif director.action == 'move': 
+		x1, x2, y1, y2 = director.x1, director.x2, director.y1, director.y2
+		lastmove = get_last_move_action()
+		dxl, dyl = graphical.get_increments(lastmove['x1'], lastmove['y1'], lastmove['x2'], lastmove['y2'])
+		dx, dy = graphical.get_increments(x1, y1, x2, y2)
+
+		lorient = determine_orientation(dxl, dyl) #last orientation
+		corient = determine_orientation(dx, dy)	#current orientation
+
 	if director.action == 'move':
 		if (lorient == 'from w' and corient == 'from s') or (lorient == 'from n' and corient == 'from e') : char = 180
 		elif (lorient == 'from w' and corient == 'from n') or (lorient == 'from s' and corient == 'from e'): char = 183
@@ -2259,11 +2412,19 @@ def determine_drawchar(prevchar):
 		elif (lorient ==  'from n' and corient == 'from nw') or (lorient == 'from se' and corient == 'from s'): char = 203
 
 
-		elif dyl == 0 and dy == 0: char = 196 #straight lines :horizontal
-		elif dxl == 0 and dx == 0: char = 179 #vertical
+		elif dyl == 0 and dy == 0: 
+			char = 196 #straight lines :horizontal
+			if prevchar == 179: char = 197 #vertical cross
+		elif dxl == 0 and dx == 0: 
+			char = 179 #vertical
+			if prevchar == 196: char = 197 #vertical cross
 
-		elif (lorient ==  'from se' and corient == 'from se') or (lorient == 'from nw' and corient == 'from nw'): char = 189 #diagonals
-		elif (lorient ==  'from ne' and corient == 'from ne') or (lorient == 'from sw' and corient == 'from sw'): char = 188
+		elif (lorient ==  'from se' and corient == 'from se') or (lorient == 'from nw' and corient == 'from nw'): 
+			char = 189 #diagonals: sw-ne
+			if prevchar == 188: char = 190 #diagonal cross
+		elif (lorient ==  'from ne' and corient == 'from ne') or (lorient == 'from sw' and corient == 'from sw'): 
+			char = 188 #se-nw
+			if prevchar == 189: char = 190 #diagonal cross
 
 		elif (lorient ==  'from se' and corient == 'from ne') or (lorient == 'from sw' and corient == 'from nw'): char = 211
 		elif (lorient ==  'from nw' and corient == 'from sw') or (lorient == 'from ne' and corient == 'from se'): char = 209
@@ -2278,7 +2439,10 @@ def determine_drawchar(prevchar):
 		elif (lorient ==  'from n' and corient == 'from sw') or (lorient == 'from ne' and corient == 'from s'): char = 260  #45deg diagonal 'beaks'
 		elif (lorient ==  'from nw' and corient == 'from s') or (lorient == 'from n' and corient == 'from se'): char = 259
 		elif (lorient ==  'from nw' and corient == 'from e') or (lorient == 'from w' and corient == 'from se'): char = 258
-# I hope to eventually come up with a non-retarded way to do this, perhaps involving binary representations
+	
+
+
+# I hope to eventually come up with a non-retarded way to do this, perhaps involving binary representations (bytearray)
 	return char
 
 def get_last_move_action():
