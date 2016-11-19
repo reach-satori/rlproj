@@ -2,9 +2,12 @@ import libtcodpy as libtcod
 import math
 import textwrap
 import shelve
+from random import gauss, uniform
+from collections import deque
+#===============#
 import catalog
 import graphical
-from random import gauss, uniform
+from floodfill import enclosed_space_processing
 
 #TODO: big todos:
 #TODO: Graphical effects(floating text, floating numbers maybe, blood, buff effects)##floating text done
@@ -21,8 +24,8 @@ SCREEN_HEIGHT = 60
 
 
 #map size
-MAP_WIDTH = 160
-MAP_HEIGHT = 150
+MAP_WIDTH = 80
+MAP_HEIGHT = 50
 
 CAMERA_WIDTH = 80
 CAMERA_HEIGHT = 50
@@ -70,6 +73,8 @@ color_light_ground = libtcod.Color(200, 180, 50)
 class DrawingDir(object): #singleton drawdir
 	def __init__(self): #keeps record of ritual drawings on the ground that are not yet activated, since I want the player to be able to have multiple of them set up at once
 		self.drawinglist = []
+	def clear(self):
+		for drawing in self.drawinglist: self.drawinglist.remove(drawing)
 
 	@property
 	def active_drawing(self):
@@ -82,6 +87,49 @@ class DrawingDir(object): #singleton drawdir
 			print '####################################################'
 	
 
+class PlayerActionReport(object): #singleton, director
+	def __init__(self, action = None, x1 = None, y1 = None, x2 = None, y2 = None, objects = None, action_extra = None, takes_turn = True):
+		self.action = action
+		self.action_extra = action_extra   #
+		self.takes_turn = takes_turn       #
+#ACTIONS: move, attack, start drawing, stop drawing, drop item, equip item, use item
+
+		self.x1 = x1                       #This object reports on the last action taken by the player, as well as keeping a record of the last however many actions in a list(number decided in add_to_recorder),
+		self.y1 = y1                       #Remember to add a director update call to every player action
+		self.x2 = x2                       #
+		self.y2 = y2                       #
+		self.objects = objects             #
+		self.recorder = deque([], 20)                 #
+
+	def __dir__(self):
+		return ['action', 'x1', 'y1', 'y2', 'x2', 'objects', 'action_extra', 'takes_turn']
+
+	def update(self, **kwargs):#kwarg keywords must be attributes. This function updates the director singleton with the attributes passed, then sets all of its other attributes to standard values defined at the bottom(or None if there are no defaults)
+		global director
+		for keyword, value in kwargs.iteritems(): 
+			try: setattr(self, keyword, value)
+			except: raise ValueError('!!!!!ERROR!!!!!: Probably a parameter name error in an update call:', keyword, value, '\ninvolving objects:', objects)
+
+		setnone = filter(lambda x: x not in kwargs, [attr for attr in dir(self)]) #setnone is the list of PlayerActionReport attributes that were not in the kwargs passed, to be set to none or a default
+
+		for attrname in setnone:
+			try: setattr(self, attrname, None)
+			except: raise ValueError('Something has gone wrong with the game director. Check what got passed through director.update', attrname, setnone, dir(self))
+
+		if 'takes_turn' not in kwargs: self.takes_turn = True
+		if 'x1' not in kwargs: self.x1 = player.x
+		if 'y1' not in kwargs: self.y1 = player.y
+
+
+		self.add_to_recorder()
+
+	def add_to_recorder(self): #records every player action(aka every separate state taken by the director singleton). Saved as a list of dictionaries, with key names equal to the playeractionreport attribute names
+		record_dict = {}
+		for attribute in dir(self):
+			record_dict[attribute] = self.__dict__[attribute]
+		self.recorder.append(record_dict)
+		# if len(self.recorder) > 50: self.recorder.pop(0) #rolling list
+		#commented out because the max length is set by deque in the __init__ of this object
 
 class RitualDraw(object): #each drawing main body is represented by this
 	def __init__(self, originx, originy):
@@ -91,10 +139,10 @@ class RitualDraw(object): #each drawing main body is represented by this
 		self.drawntile_list = []
 		self.concluded = False
 		self.spent = False
+		self.power = 0
 
 	def get_glyphs(self):
 		glyphtile_list = filter(lambda tile: tile.special.name == 'glyph', self.drawntile_list)
-		print glyphtile_list
 		return glyphtile_list
 
 
@@ -103,11 +151,73 @@ class RitualDraw(object): #each drawing main body is represented by this
 
 	def evoke(self):
 		self.drawntile_list = list(set(self.drawntile_list)) #glyphs were duplicating if they were placed in junctions of merged drawings for some reason, this fixes it
-		shape = self.determine_shape()
 		glyphs = self.get_glyphs()
+		affected = self.get_affected()
+
+
 
 		for tile in self.drawntile_list:
 			tile.special.char = '*'
+
+	def get_affected(self):
+		shape = self.determine_shape()
+
+		affected = []
+		if shape in ['aoe cross', 'focus cross']: center = self.get_center()
+
+		if shape == 'focus cross' and center == None:
+			for tile in self.drawntile_list:
+				if gamemap[tile.x+1][tile.y] in self.drawntile_list and gamemap[tile.x][tile.y+1] in self.drawntile_list:
+					center = tile # not really center, this is some fuckery that had to be solved with X crosses involving even numbers
+					break  #but i dont feel like explaining it all so whatever
+
+			for obj in objects:
+				if obj.fighter and (obj.x, obj.y) in [(center.x, center.y),(center.x+1, center.y),(center.x, center.y+1),(center.x+1, center.y+1)]:
+					affected.append(obj)
+
+
+		elif shape == 'focus cross':
+			for obj in objects:
+					if obj.fighter and obj.distance_to(center) < 2: 
+						affected.append(obj)
+
+		elif shape == 'aoe cross':
+			size = (len(self.drawntile_list) - 1)/4 #size is the length of each "arm" on the cross
+			for obj in objects:
+				if obj.fighter and obj.distance_to(center) <= size + 1: 
+					affected.append(obj)
+
+		elif shape == 'linear':
+			affected_coords = [(tile.x, tile.y) for tile in self.drawntile_list]
+			for obj in objects:
+				if obj.fighter and (obj.x, obj.y) in affected_coords:
+					affected.append(obj)
+
+		elif shape == 'enclosed':
+			enclosed_coords = enclosed_space_processing(self.drawntile_list)
+			line_coords = [(tile.x, tile.y) for tile in self.drawntile_list]
+			for obj in objects:
+				if obj.fighter and ((obj.x, obj.y) in enclosed_coords or (obj.x, obj.y) in line_coords):
+					affected.append(obj)
+
+		return affected
+
+	def get_center(self):
+		center = None
+
+		for tile in self.drawntile_list:
+			x, y = tile.x, tile.y
+			if tile.special.char == 188 or tile.special.char == 197:
+				if (gamemap[x+1][y] in self.drawntile_list) and (gamemap[x-1][y] in self.drawntile_list) and (gamemap[x][y+1] in self.drawntile_list) and (gamemap[x][y-1] in self.drawntile_list): # plus-shaped central tile
+					center = tile
+					break
+
+				elif (gamemap[x+1][y+1] in self.drawntile_list) and (gamemap[x+1][y-1] in self.drawntile_list) and (gamemap[x-1][y+1] in self.drawntile_list) and (gamemap[x-1][y-1] in self.drawntile_list): # 'X shaped central tile'
+					center = tile
+					break
+
+		return center
+
 
 	def determine_shape(self): #what an ugly piece of code
 		width, height = self.get_dimensions()
@@ -126,51 +236,47 @@ class RitualDraw(object): #each drawing main body is represented by this
 				if char not in [15, 209, 210, 211, 212, 190, 188, 189]:
 					diamond = False
 
-			for tile in self.drawntile_list: #then, find a central tile
-				x, y = tile.x, tile.y
-				center_tile = None
-
-				if (gamemap[x+1][y] in self.drawntile_list) and (gamemap[x-1][y] in self.drawntile_list) and (gamemap[x][y+1] in self.drawntile_list) and (gamemap[x][y-1] in self.drawntile_list): # plus-shaped central tile
-					center_tile = tile
-					diamond = False
-					focus_cross = False
-					break
-
-				elif (gamemap[x+1][y+1] in self.drawntile_list) and (gamemap[x+1][y-1] in self.drawntile_list) and (gamemap[x-1][y+1] in self.drawntile_list) and (gamemap[x-1][y-1] in self.drawntile_list): # 'X shaped central tile'
-					center_tile = tile
-					aoe_cross = False
-					diamond = False
-					break
-
+			center_tile = self.get_center()
 			if center_tile is None:
 				aoe_cross = False
+			elif center_tile.special.char == 188:
+				aoe_cross = False
+				diamond = False
+			elif center_tile.special.char == 197:
 				focus_cross = False
+				diamond = False
 
 			else: #check for symmetry
+				if diamond:
+					all_X = map(lambda tile: tile.x, self.drawntile)
+					all_y = map(lambda tile: tile.y, self.drawntile)
+					center_tile = Point(min(all_x)+float(width)/2, min(all_y) + float(height)/2)
 				left_of_center = filter(lambda tile: tile.x < center_tile.x, self.drawntile_list)
 				right_of_center = filter(lambda tile: tile.x > center_tile.x, self.drawntile_list)
 				above_center = filter(lambda tile: tile.y < center_tile.y, self.drawntile_list)
 				below_center = filter(lambda tile: tile.y > center_tile.y, self.drawntile_list)
+
 				if not len(left_of_center) == len(right_of_center) == len(above_center) == len(below_center):
 					aoe_cross = False
 					focus_cross = False
+					diamond = False
 
-		else: #still have to check for diamond symmetry, but i have an idea for this: get the center for the diamond's bounding box and project horizontal and vertical lines from it, dividing the whole thing in 4 sections. If every section has the same num of tiles, it passes the test
+		else: 
 			aoe_cross = False
 			focus_cross = False
 			diamond = False
+
 
 		if aoe_cross == True and focus_cross == False and diamond == False: return 'aoe cross'
 		elif aoe_cross == False and focus_cross == False and diamond == True: return 'diamond'
 		elif aoe_cross == False and focus_cross == True and diamond == False: return 'focus cross'
 
-		return 'linear'
-
-			
-
-
+		enclosed_coords = enclosed_space_processing(self.drawntile_list)
+		if not enclosed_coords: return 'linear'
+		else: return 'enclosed' 
 		
 
+			
 	def merge(self, inactive_drawing):
 		global drawdir
 
@@ -194,46 +300,12 @@ class Point:
 		self.y = y
 
 
-class PlayerActionReport(object): #singleton, director
-	def __init__(self, action = None, x1 = None, y1 = None, x2 = None, y2 = None, objects = None, action_extra = None, takes_turn = True):
-		self.action = action
-		self.action_extra = action_extra   #
-		self.takes_turn = takes_turn       #
-#ACTIONS: move, attack, start drawing, stop drawing, drop item, equip item, use item
 
-		self.x1 = x1                       #This object reports on the last action taken by the player, as well as keeping a record of the last 50 actions in a list(number decided in add_to_recorder),
-		self.y1 = y1                       #Remember to add a director update call to every player action that takes a turn
-		self.x2 = x2                       #
-		self.y2 = y2                       #
-		self.objects = objects             #
-		self.recorder = []                 #
 
-	def __dir__(self):
-		return ['action', 'x1', 'y1', 'y2', 'x2', 'objects', 'action_extra', 'takes_turn']
 
-	def update(self, **kwargs):#kwarg keywords must be attributes. This function updates the director singleton with the attributes passed, then sets all of its other attributes to standard values defined at the bottom(or none if there are no defaults)
-		global director
-		for keyword, value in kwargs.iteritems():
-			setattr(self, keyword, value)
 
-		attrlist = [attr for attr in dir(self)]
-		setnone = filter(lambda x: x not in kwargs, [attr for attr in dir(self)])
-		for attrname in setnone:
-			try: setattr(self, attrname, None)
-			except: raise ValueError('Something has gone wrong with the game director. Check what got passed through director.update', attrname, setnone, dir(self))
 
-		if 'takes_turn' not in kwargs: self.takes_turn = True
-		if 'x1' not in kwargs: self.x1 = player.x
-		if 'y1' not in kwargs: self.y1 = player.y
 
-		self.add_to_recorder()
-
-	def add_to_recorder(self):
-		record_dict = {}
-		for attribute in dir(self):
-			record_dict[attribute] = self.__dict__[attribute]
-		self.recorder.append(record_dict)
-		if len(self.recorder) > 50: self.recorder.pop(0) #rolling list
 
 
 
@@ -474,7 +546,7 @@ class Equipment:
 	def equip(self,equipper):
 		#equip object and show a message about it
 		if equipper == 'player':
-			if self.twohand and get_equipped_in_slot('left hand'): 
+			if self.twohand and get_equipped_in_slot('off hand'): 
 				message("The " + self.owner.name + ' requires both hands to use.')
 				return
 				
@@ -630,7 +702,7 @@ class StatusEffect(object): #TODO: STACKING BEHAVIOUR FOR STATUS EFFECTS
 	def __init__(self, name, duration, affected):
 		self.name = name
 		self.duration = duration
-		if duration == 0: self.duration = -1
+		if duration == 0: self.duration = -1 #unlimited
 		self.affected = affected
 		self.startfunction()
 
@@ -653,8 +725,8 @@ class StatusEffect(object): #TODO: STACKING BEHAVIOUR FOR STATUS EFFECTS
 			drawing_function(self)
 		self.duration -= 1
 
-class GraphicalStatus(StatusEffect):
-	pass
+class GraphicalStatus(StatusEffect): #used to distinguish which status get resolved at frame-speed and which at turn-speed
+	pass #one goes in play_game, the other in render_all
 
 
 
@@ -792,10 +864,11 @@ class DumbMonster:  # basic AI
 			return
 
 		if libtcod.map_is_in_fov(fov_map, monster.x, monster.y):
-			if monster.distance_to(player) >= 2 and len(monster.fighter.status) > 0:
+			if monster.distance_to(player) >= 2 and len(monster.fighter.status) > 0: #if theres a status on
 				for status in monster.fighter.status:
 					if status.name == 'maim' and status.duration % 2 == 0:
 						monster.move_astar(player)
+						
 
 			elif monster.distance_to(player) >= 2:
 				monster.move_astar(player)
@@ -1104,19 +1177,19 @@ class GameObj(object):
 			
 		elif self.name == 'scrap metal sword':
 			self.item = Item(self, weight = 7, depth_level = 2, itemtype = 'heavy blade')
-			self.equipment = Equipment(self, slot='right hand', base_dmg = [5,7])
+			self.equipment = Equipment(self, slot='main hand', base_dmg = [5,7])
 			
 		elif self.name == 'rebar blade':
 			self.item = Item(self, weight = 20, depth_level = 2,itemtype = 'heavy blade')
-			self.equipment = Equipment(self, slot = 'right hand', base_dmg = [10,13],  twohand = True)
+			self.equipment = Equipment(self, slot = 'main hand', base_dmg = [10,13],  twohand = True)
 			
 		elif self.name == 'kitchen knife':
 			self.item = Item(self, weight = 4, depth_level = 1, itemtype = 'light blade')
-			self.equipment = Equipment(self, slot='right hand', base_dmg = [3,4])
+			self.equipment = Equipment(self, slot='main hand', base_dmg = [3,4])
 			
 		elif self.name == 'metal plate':
 			self.item = Item(self, weight = 5, depth_level = 2)#weapons need itemtype, but armor can just get a slot check
-			self.equipment = Equipment(self, slot='left hand', armor_bonus = 3, dodge_bonus = 2)
+			self.equipment = Equipment(self, slot='off hand', armor_bonus = 3, dodge_bonus = 2)
 			
 		elif self.name == 'goat leather sandals':
 			self.item = Item(self, weight = 2, depth_level = 2)
@@ -1391,8 +1464,8 @@ def get_equipped_in_slot(slot):  #returns the equipment in a slot, or None if it
 		if obj.equipment and obj.equipment.slot == slot and obj.equipment.is_equipped:
 			return obj.equipment
 
-	if slot == 'left hand':                     #
-		wep = get_equipped_in_slot('right hand')# twohander special case
+	if slot == 'off hand':                     #
+		wep = get_equipped_in_slot('main hand')# twohander special case
 		if wep and wep.twohand: return wep      #
 
 
@@ -1415,6 +1488,7 @@ def next_level():
 	message('You descend further into the bowels of the earth.', libtcod.dark_violet)
 	make_map()
 	libtcod.console_clear(con)
+	drawdir.clear()
 
 	initialize_fov()
 	
@@ -1475,7 +1549,7 @@ def handle_keys():
 		elif key_char == 'd' and key.shift:#(D)raw
 			if player.abl_toggle_drawing() == "didnt-take-turn": return 'didnt-take-turn'
 
-		elif key_char == 'e' and key.shift:#(E)voke drawing
+		elif key_char == 'e' and key.shift:#(E)voke drawing:
 			if 'drawing' in [stati.name for stati in player.fighter.status]:
 				message("Can't evoke while still drawing.")
 				return 'didnt-take-turn'
@@ -1491,6 +1565,8 @@ def handle_keys():
 				message('Nothing to evoke there.')
 				return 'didnt-take-turn'
 
+
+
 		elif key_char == 'w': #(w)ield/wear
 			chosen_equipment = action_equip_menu('Choose an item to wield/wear:\n')
 			if chosen_equipment is None:
@@ -1503,7 +1579,7 @@ def handle_keys():
 			if chosen_item is None:
 				return 'didnt-take-turn'
 			elif chosen_item == 'empty':
-				msgbox('No item there! Press E to equip something.')
+				msgbox('No item there! Use the (w)ield key to equip something.')
 				return 'didnt-take-turn'
 			else:
 				chosen_action = chosen_item.equip_options()
@@ -1741,9 +1817,6 @@ def render_all():
 
 	#blits the content of the 'con' console to the root console
 	libtcod.console_blit(con, 0, 0, CAMERA_WIDTH, CAMERA_HEIGHT, 0, 0, 0)
-
-
-
 	libtcod.console_set_default_background(panel, libtcod.black)
 	libtcod.console_clear(panel)
 	#print game messages, one line at a time
@@ -2292,7 +2365,7 @@ def consumable_pipegun():
 	else:
 		message('The slug explodes out of the flimsy gun with a loud thunder and strikes the ' + monster.name + '! The damage is '+ str(LIGHTNING_DAMAGE) + ' hit points.', libtcod.light_blue)
 		# draw_laser(player, monster, graphical.determine_projchar(player, monster), libtcod.light_blue)
-		graphical.LineHandler(player, monster, libtcod.light_blue)
+		line = graphical.LineHandler(player, monster, libtcod.light_blue)
 		# lineffect.draw(libtcod.light_blue) #it's in the init method now, not sure if i should keep it there
 
 
@@ -2389,7 +2462,8 @@ def determine_drawchar(prevchar):
 
 	elif director.action == 'move': 
 		x1, x2, y1, y2 = director.x1, director.x2, director.y1, director.y2
-		lastmove = get_last_move_action()
+		moverec = filter(lambda act: act['action'] == 'move', director.recorder)
+		lastmove = moverec[-2] 
 		dxl, dyl = graphical.get_increments(lastmove['x1'], lastmove['y1'], lastmove['x2'], lastmove['y2'])
 		dx, dy = graphical.get_increments(x1, y1, x2, y2)
 
@@ -2419,7 +2493,7 @@ def determine_drawchar(prevchar):
 			char = 179 #vertical
 			if prevchar == 196: char = 197 #vertical cross
 
-		elif (lorient ==  'from se' and corient == 'from se') or (lorient == 'from nw' and corient == 'from nw'): 
+		elif (lorient ==  'from se' and corient == 'from se') or (lorient == 'from nw' and corient == 'from nw'):
 			char = 189 #diagonals: sw-ne
 			if prevchar == 188: char = 190 #diagonal cross
 		elif (lorient ==  'from ne' and corient == 'from ne') or (lorient == 'from sw' and corient == 'from sw'): 
@@ -2445,10 +2519,7 @@ def determine_drawchar(prevchar):
 # I hope to eventually come up with a non-retarded way to do this, perhaps involving binary representations (bytearray)
 	return char
 
-def get_last_move_action():
-	for i in range(len(director.recorder)-2, 0, -1):
-		if director.recorder[i]['action'] == 'move':
-			return director.recorder[i]
+
 
 
 

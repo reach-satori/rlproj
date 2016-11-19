@@ -26,7 +26,7 @@ class FloatingText(EffectCon):
 		self.text = text.upper() + '!'
 		self.origin = origin
 		self.color = color
-		self.blitx = int(origin.camx - ceil(float(width)/2))
+		self.blitx = int(round(origin.camx - ceil(float(width)/2)))
 		self.blity = origin.camy - (height - 1)
 		
 		activeeffects.append(self)
@@ -105,7 +105,7 @@ def render_effects():
 	for effect in activeeffects:
 		if effect.duration == 0: 
 			activeeffects.remove(effect)
-			libtcod.console_delete(effect.console)
+			# libtcod.console_delete(effect.console)
 		effect.draw()
 
 def console_from_twopts(origin, end):
