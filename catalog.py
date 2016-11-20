@@ -5,8 +5,8 @@ import libtcodpy as libtcod
 SLOTLIST = ['head', 
 			'hands', 
 			'chest', 
-			'right hand', 
-			'left hand', 
+			'main hand', 
+			'off hand', 
 			'amulet', 
 			'left ring', 
 			'right ring', 
@@ -180,6 +180,8 @@ class SkillNode(object):
 
 	def levelup(self):
 		self.leveled = True
+		if self.owner.level < self.tier:
+			self.owner.level = self.tier
 
 
 def get_nodetable(treename): #only happens in initialization of skill tree (ctree, ttree, rtree, ptree)
@@ -205,16 +207,23 @@ def get_nodetable(treename): #only happens in initialization of skill tree (ctre
 
 	return nodetable
 
+def get_glyphs(level):
+	glyphlist = []
+	if level >= 1:
+		glyphlist.append('damage glyph')
+		glyphlist.append('damage over time glyph')
+	return glyphlist
+
 
 def get_node_description(node):
 	if node == 'heavy blades':
-		return ["KICKS THEIR WITH BIG METAL STICK PLACEHOLDER PLACEHOLDER", 'test test test']
+		return ["KILL WITH BIG METAL STICK PLACEHOLDER PLACEHOLDER", 'test test test']
 	elif node == 'basic training':
 		return ['you can kill people better with your hands', 'test test test test']
 	elif node == 'shield focus':
 		return ['shield bonus, shield slam granted']
 	elif node == 'basic ritualism':
-		return ['Basic training in the mysteries of rituals.', 'Allows use of trinkets, drawing of ritualistic sigils,', 'more stuff later']
+		return ['Basic training in The Mysteries', 'Allows use of trinkets and drawing of ritualistic sigils and glyphs.']
 	elif node == 'basic engineering':
 		return ['Basic training in the mysteries of rituals.', 'Allows use of trinkets, drawing of ritualistic sigils,', 'more stuff later']
 

@@ -16,7 +16,7 @@ from floodfill import enclosed_space_processing
 #TODO: staves, ranged weapons, polearms, cudgels
 #TODO: more weapons, more enemies, more consumables
 #TODO: fill out skill, perk trees
-#TODO: subskill system***
+#TODO: subskill system***?
 
 #window size
 SCREEN_WIDTH = 120
@@ -139,7 +139,6 @@ class RitualDraw(object): #each drawing main body is represented by this
 		self.drawntile_list = []
 		self.concluded = False
 		self.spent = False
-		self.power = 0
 
 	def get_glyphs(self):
 		glyphtile_list = filter(lambda tile: tile.special.name == 'glyph', self.drawntile_list)
@@ -149,15 +148,65 @@ class RitualDraw(object): #each drawing main body is represented by this
 	def add_drawntile(self, tile): #list of gamemap tiles involved
 		self.drawntile_list.append(tile)
 
+	def diagonal_exception(self): #i refuse to explain this, in fact i refuse to even look at it anymore
+		print 'check 0'
+		for tile in self.drawntile_list:
+			x = tile.x
+			y = tile.y
+			if gamemap[x+1][y].special and gamemap[x][y+1].special:
+				if gamemap[x+1][y] not in self.drawntile_list and gamemap[x][y+1] not in self.drawntile_list:
+					if gamemap[x+1][y].special.name in ['glyph', 'drawing'] and gamemap[x][y+1].special.name in ['glyph', 'drawing']:
+						if gamemap[x+1][y+1] in self.drawntile_list:
+							if gamemap[x+1][y].get_drawing() == gamemap[x][y+1].get_drawing():
+								self.merge(gamemap[x][y+1].get_drawing())
+								return
+
+			if gamemap[x-1][y].special and gamemap[x][y+1].special:
+				print "check 1"
+				if gamemap[x-1][y] not in self.drawntile_list and gamemap[x][y+1] not in self.drawntile_list:
+					print "check 2"
+					if gamemap[x-1][y].special.name in ['glyph', 'drawing'] and gamemap[x][y+1].special.name in ['glyph', 'drawing']:
+						print "check 3"
+						if gamemap[x-1][y+1] in self.drawntile_list:
+							print "check 4"
+							if gamemap[x-1][y].get_drawing() == gamemap[x][y+1].get_drawing():
+								print "check 5"
+								self.merge(gamemap[x][y+1].get_drawing())
+								return
+
+
 	def evoke(self):
+		self.diagonal_exception()
 		self.drawntile_list = list(set(self.drawntile_list)) #glyphs were duplicating if they were placed in junctions of merged drawings for some reason, this fixes it
+		power = 10
 		glyphs = self.get_glyphs()
 		affected = self.get_affected()
+		shape = self.determine_shape()
+
+		if shape == 'focus cross':
+			if len(self.drawntile_list) % 4 == 0: size = len(self.drawntile_list)/4
+			else:size = (len(self.drawntile_list)-1)/4
+			power += 7*size
+
+		elif shape == 'enclosed': power += 7
+
+		for glyph in glyphs:
+			if glyph.special.char == 264:
+				for dude in affected:
+					if dude.fighter: dude.fighter.take_damage(int(round(power*1.5)))
+					message("The " + dude.name + " is blasted by a wave of energy.")
+			if glyph.special.char == 265:
+				for dude in affected:
+					dude.fighter.receive_status('DoT', 7, power = power)
+					message('The '+ dude.name + "'s flesh starts to decay!")
 
 
 
 		for tile in self.drawntile_list:
-			tile.special.char = '*'
+			tile.special.char = ','
+
+		self.spent = True
+		drawdir.drawinglist.remove(self)
 
 	def get_affected(self):
 		shape = self.determine_shape()
@@ -299,25 +348,13 @@ class Point:
 		self.x = x
 		self.y = y
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 class SkillTree:
 	def __init__(self, stype, level = 0):
 		self.stype = stype
 		self.level = level
 		self.nodetable = catalog.get_nodetable(stype)
+		for node in self.nodetable:
+			node.owner = self
 
 	def get_node_from_name(self, name):
 		for node in self.nodetable:
@@ -699,12 +736,13 @@ class Item:
 		else: return self.owner.name
 
 class StatusEffect(object): #TODO: STACKING BEHAVIOUR FOR STATUS EFFECTS
-	def __init__(self, name, duration, affected):
+	def __init__(self, name, duration, affected, power = 0):
 		self.name = name
 		self.duration = duration
 		if duration == 0: self.duration = -1 #unlimited
 		self.affected = affected
 		self.startfunction()
+		self.power = power
 
 	def activate(self):
 		if self.duration == 0:
@@ -713,24 +751,26 @@ class StatusEffect(object): #TODO: STACKING BEHAVIOUR FOR STATUS EFFECTS
 			self.stepfunction()
 
 	def terminate(self):
+		self.endfunction()
 		self.affected.status.remove(self)
 
 	def startfunction(self):
 		if self.name == 'maim':
 			return graphical.FloatingText(self.affected.owner, self.name, libtcod.violet)
 
-
 	def stepfunction(self):
 		if self.name == 'drawing': 
 			drawing_function(self)
+		if self.name == 'DoT':
+			self.affected.take_damage(round(self.power*0.4))
 		self.duration -= 1
 
+
+	def endfunction(self):
+		pass
+
 class GraphicalStatus(StatusEffect): #used to distinguish which status get resolved at frame-speed and which at turn-speed
-	pass #one goes in play_game, the other in render_all
-
-
-
-
+	pass #one goes in play_game, the other in render_all -- maybe they will have some more differences eventually
 
 class Fighter:
 	def __init__(self, hp, armor, power, xp,  death_function = None, depth_level = 1):
@@ -757,8 +797,8 @@ class Fighter:
 				if function is not None:
 					function(self.owner)
 
-	def receive_status(self, statusname, duration):
-		status = StatusEffect(statusname, duration, self)
+	def receive_status(self, statusname, duration, power = 0):
+		status = StatusEffect(statusname, duration, self, power)
 		self.status.append(status)
 
 	def attack(self, target):
@@ -868,6 +908,7 @@ class DumbMonster:  # basic AI
 				for status in monster.fighter.status:
 					if status.name == 'maim' and status.duration % 2 == 0:
 						monster.move_astar(player)
+					else: monster.move_astar(player)
 						
 
 			elif monster.distance_to(player) >= 2:
@@ -1547,9 +1588,21 @@ def handle_keys():
 			else: return 'didnt-take-turn'
 
 		elif key_char == 'd' and key.shift:#(D)raw
+			if rtree.level < 1:
+				message("You don't know how to draw.")
+				return 'didnt-take-turn'
+
 			if player.abl_toggle_drawing() == "didnt-take-turn": return 'didnt-take-turn'
 
 		elif key_char == 'e' and key.shift:#(E)voke drawing:
+			if rtree.level < 1:
+				message("You don't know how to evoke.")
+				return 'didnt-take-turn'
+
+			if drawdir.drawinglist == []:
+				message("There's nothing to evoke right now.")
+				return 'didnt-take-turn'
+
 			if 'drawing' in [stati.name for stati in player.fighter.status]:
 				message("Can't evoke while still drawing.")
 				return 'didnt-take-turn'
@@ -1662,15 +1715,16 @@ def activate_ability(abil_name): #returns abil name if not cancelled, None other
 	if completed == True: return abil_name
 
 def glyph_draw_menu():
-	#glyph_choices = something something from rtree
-	glyph_choices = ['&' , '$']
+	glyph_choices = catalog.get_glyphs(rtree.level)
 	choice = menu('Choose a glyph to draw.', glyph_choices, SCREEN_WIDTH/2)
 
 	if choice is not None:
 		draw_glyph(glyph_choices[choice])
 	else: return 'didnt-take-turn'
 
-def draw_glyph(glyph):
+def draw_glyph(glyphname):
+	if glyphname == 'damage glyph': glyph = 264
+	if glyphname == 'damage over time glyph': glyph = 265 #when adding new characters remember to change it in the custom_font libtcod function
 	glyphtile = gamemap[player.x][player.y]
 	if glyphtile.special and glyphtile.special.name == 'drawing':
 		glyphtile.special.char = glyph
@@ -1932,7 +1986,7 @@ def generate_tile(name, x, y):
 	return tile
 
 def generate_monster(name, x, y):
-	if name == 'crazed mutt':
+	if name == 'starved mutt':
 		fighter_component = Fighter(hp = 30, armor = 0, power = 4, xp = 10, death_function = monster_death, depth_level = 1)
 		ai_component = DumbMonster()
 		monster = GameObj(x, y, 'd', name, libtcod.lighter_red, blocks = True, fighter = fighter_component, ai = ai_component)
@@ -1952,7 +2006,7 @@ def place_objects(room):
 		if not is_blocked(x,y):
 	###################### MONSTER RNG SHIT #######################
 	#REDO LATER WITH FANCY PDFs
-			monster_chance = {'crazed mutt': 80, 'mad hermit': 20}
+			monster_chance = {'starved mutt': 80, 'mad hermit': 20}
 			choice = random_choice(monster_chance)
 			monster = generate_monster(choice,x,y)
 	###################### MONSTER RNG SHIT #######################
@@ -2369,7 +2423,7 @@ def consumable_pipegun():
 		# lineffect.draw(libtcod.light_blue) #it's in the init method now, not sure if i should keep it there
 
 
-		monster.fighter.take_damage(1)
+		monster.fighter.take_damage(15)
 		monster.fighter.receive_status('maim', 30)
 		
 
@@ -2526,7 +2580,7 @@ def determine_drawchar(prevchar):
 libtcod.console_set_custom_font('Terminus.png', libtcod.FONT_LAYOUT_ASCII_INROW, nb_char_horiz=16, nb_char_vertic=17)
 libtcod.console_init_root(SCREEN_WIDTH, SCREEN_HEIGHT, 'python/libtcod tutorial', False)
 libtcod.sys_set_fps(LIMIT_FPS)
-libtcod.console_map_ascii_codes_to_font(256, 16, 0, 16)
+libtcod.console_map_ascii_codes_to_font(256, 11, 0, 16)
 con = libtcod.console_new(CAMERA_WIDTH, CAMERA_HEIGHT)
 panel = libtcod.console_new(SCREEN_WIDTH, PANEL_HEIGHT)
 main_menu()
