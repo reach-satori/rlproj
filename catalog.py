@@ -26,7 +26,8 @@ FULL_INAMELIST = ['healing salve',
 				'goat leather sandals',
 				'kitchen knife',
 				"someone's memento",
-				'rebar blade']
+				'rebar blade',
+				'chalk']
 
 FULL_RACELIST = ['human',
 				'anime catgirl',
@@ -187,7 +188,7 @@ class SkillNode(object):
 def get_nodetable(treename): #only happens in initialization of skill tree (ctree, ttree, rtree, ptree)
 	if treename == 'combat':
 		nodetable = [
-		SkillNode(name = 'basic training', tier = 1, leveled = False, abilities = ['kicklaunch'], description = get_node_description('basic training'), parent = []),
+		SkillNode(name = 'basic training', tier = 1, leveled = False, abilities = ['kicklaunch', 'sprint'], description = get_node_description('basic training'), parent = []),
 		SkillNode(name = 'heavy blades', tier = 2, leveled = False, abilities = [],               description = get_node_description('heavy blades'),   parent = ['basic training'])
 		]
 	elif treename == 'tech':
@@ -212,6 +213,7 @@ def get_glyphs(level):
 	if level >= 1:
 		glyphlist.append('damage glyph')
 		glyphlist.append('damage over time glyph')
+		glyphlist.append('slow glyph')
 	return glyphlist
 
 
@@ -400,6 +402,18 @@ def get_item_description(item):
 				'Armor bonus: ' + str(item.equipment.armor_bonus),
 				'Dodge bonus: ' + str(item.equipment.dodge_bonus),
 				'Weight: ' + str(item.weight)
+				]
+
+	elif item.owner.name == 'chalk':
+		description = [
+		        'The most basic and plentiful drawing component.',
+				'Used for the drawing of sigils and doodles since time immemorial.',
+				'Chalk is cheap, easy to find and a single stick of it will last quite a while,',
+				'however, its power when it comes to evokation is rather lacking.',
+				'',
+				'Charges: ' + str(item.stack),
+				'Weight: '+ str(item.weight)
+
 				]
 
 

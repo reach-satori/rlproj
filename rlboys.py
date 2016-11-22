@@ -70,6 +70,23 @@ color_dark_ground = libtcod.Color(50, 50, 150)
 color_light_wall = libtcod.Color(130, 110, 50)
 color_light_ground = libtcod.Color(200, 180, 50)
 
+
+class TurnLord(object):
+	def __init__(self):
+		self.act_points = 0
+
+	def process(self):
+		self.act_points += player.fighter.speed #to be changed lated in its own method, grabbing from director for variable speed actions, but for now it's always const. player speed
+
+
+		fighterlist = filter(lambda x: x.fighter, objects)
+		fighterlist.remove(player)
+		for obj in fighterlist:
+			if libtcod.map_is_in_fov(fov_map,obj.x,obj.y): 
+				obj.fighter.energy += self.act_points
+		self.act_points = 0
+
+
 class DrawingDir(object): #singleton drawdir
 	def __init__(self): #keeps record of ritual drawings on the ground that are not yet activated, since I want the player to be able to have multiple of them set up at once
 		self.drawinglist = []
@@ -149,7 +166,6 @@ class RitualDraw(object): #each drawing main body is represented by this
 		self.drawntile_list.append(tile)
 
 	def diagonal_exception(self): #i refuse to explain this, in fact i refuse to even look at it anymore
-		print 'check 0'
 		for tile in self.drawntile_list:
 			x = tile.x
 			y = tile.y
@@ -162,21 +178,17 @@ class RitualDraw(object): #each drawing main body is represented by this
 								return
 
 			if gamemap[x-1][y].special and gamemap[x][y+1].special:
-				print "check 1"
 				if gamemap[x-1][y] not in self.drawntile_list and gamemap[x][y+1] not in self.drawntile_list:
-					print "check 2"
 					if gamemap[x-1][y].special.name in ['glyph', 'drawing'] and gamemap[x][y+1].special.name in ['glyph', 'drawing']:
-						print "check 3"
 						if gamemap[x-1][y+1] in self.drawntile_list:
-							print "check 4"
 							if gamemap[x-1][y].get_drawing() == gamemap[x][y+1].get_drawing():
-								print "check 5"
 								self.merge(gamemap[x][y+1].get_drawing())
 								return
 
 
 	def evoke(self):
 		self.diagonal_exception()
+
 		self.drawntile_list = list(set(self.drawntile_list)) #glyphs were duplicating if they were placed in junctions of merged drawings for some reason, this fixes it
 		power = 10
 		glyphs = self.get_glyphs()
@@ -194,13 +206,15 @@ class RitualDraw(object): #each drawing main body is represented by this
 			if glyph.special.char == 264:
 				for dude in affected:
 					if dude.fighter: dude.fighter.take_damage(int(round(power*1.5)))
-					message("The " + dude.name + " is blasted by a wave of energy.")
+					message("The " + dude.name + " is blasted by a wave of energy!")
 			if glyph.special.char == 265:
 				for dude in affected:
 					dude.fighter.receive_status('DoT', 7, power = power)
 					message('The '+ dude.name + "'s flesh starts to decay!")
-
-
+			if glyph.special.char == 266:
+				for dude in affected:
+					dude.fighter.receive_status('slow', int(round(float(power)/2)), power = power)
+					message('The '+ dude.name + "'s movements become dull!")
 
 		for tile in self.drawntile_list:
 			tile.special.char = ','
@@ -256,16 +270,44 @@ class RitualDraw(object): #each drawing main body is represented by this
 
 		for tile in self.drawntile_list:
 			x, y = tile.x, tile.y
-			if tile.special.char == 188 or tile.special.char == 197:
+			if tile.special.char == 197:
 				if (gamemap[x+1][y] in self.drawntile_list) and (gamemap[x-1][y] in self.drawntile_list) and (gamemap[x][y+1] in self.drawntile_list) and (gamemap[x][y-1] in self.drawntile_list): # plus-shaped central tile
 					center = tile
 					break
-
-				elif (gamemap[x+1][y+1] in self.drawntile_list) and (gamemap[x+1][y-1] in self.drawntile_list) and (gamemap[x-1][y+1] in self.drawntile_list) and (gamemap[x-1][y-1] in self.drawntile_list): # 'X shaped central tile'
+			elif tile.special.char == 190:
+				if gamemap[x+1][y+1] in self.drawntile_list and gamemap[x+1][y-1] in self.drawntile_list and gamemap[x-1][y+1] in self.drawntile_list and gamemap[x-1][y-1] in self.drawntile_list: # 'X shaped central tile'
 					center = tile
 					break
 
 		return center
+
+	def focus_cross_test(self):
+		all_x = map(lambda tile: tile.x, self.drawntile_list)
+		all_y = map(lambda tile: tile.y, self.drawntile_list)
+		w = max(all_x) - min(all_x)
+		h = max(all_y) - min(all_y)
+		boundingbox = Rect(min(all_x), min(all_y), w, h)
+		diag1 = [gamemap[boundingbox.x1+i][boundingbox.y1+i] for i in range(w+1)]
+		diag2 = [gamemap[boundingbox.x2-i][boundingbox.y1+i] for i in range(w+1)]
+		selfdiag1 = []
+		selfdiag2 = []
+		for tile in diag1:
+			if tile in self.drawntile_list:
+				selfdiag1.append(tile)
+			else: return False
+		for tile in diag2:
+			if tile in self.drawntile_list:
+				selfdiag2.append(tile)
+			else: return False
+
+		full_crosstiles = selfdiag1 + selfdiag2
+		if set(full_crosstiles) == set(self.drawntile_list):
+			return True
+		else: return False
+
+
+
+
 
 
 	def determine_shape(self): #what an ugly piece of code
@@ -295,20 +337,25 @@ class RitualDraw(object): #each drawing main body is represented by this
 				focus_cross = False
 				diamond = False
 
-			else: #check for symmetry
-				if diamond:
-					all_X = map(lambda tile: tile.x, self.drawntile)
-					all_y = map(lambda tile: tile.y, self.drawntile)
-					center_tile = Point(min(all_x)+float(width)/2, min(all_y) + float(height)/2)
-				left_of_center = filter(lambda tile: tile.x < center_tile.x, self.drawntile_list)
-				right_of_center = filter(lambda tile: tile.x > center_tile.x, self.drawntile_list)
-				above_center = filter(lambda tile: tile.y < center_tile.y, self.drawntile_list)
-				below_center = filter(lambda tile: tile.y > center_tile.y, self.drawntile_list)
+		 	#check for symmetry
+			all_x = map(lambda tile: tile.x, self.drawntile_list)
+			all_y = map(lambda tile: tile.y, self.drawntile_list)
+			center_coord = Point(min(all_x)+float(width)/2, min(all_y) + float(height)/2)
+			left_of_center = filter(lambda tile: tile.x < center_coord.x, self.drawntile_list)
+			right_of_center = filter(lambda tile: tile.x > center_coord.x, self.drawntile_list)
+			above_center = filter(lambda tile: tile.y < center_coord.y, self.drawntile_list)
+			below_center = filter(lambda tile: tile.y > center_coord.y, self.drawntile_list)
 
-				if not len(left_of_center) == len(right_of_center) == len(above_center) == len(below_center):
-					aoe_cross = False
-					focus_cross = False
-					diamond = False
+			if not len(left_of_center) == len(right_of_center) == len(above_center) == len(below_center):
+				aoe_cross = False
+				focus_cross = False
+				diamond = False
+
+			if self.focus_cross_test():
+				aoe_cross = False
+				focus_cross = True
+				diamond = False
+
 
 		else: 
 			aoe_cross = False
@@ -567,7 +614,7 @@ class Ccreation: #singleton, ccreation
 
 
 class Equipment:
-	def __init__(self, owner, slot, base_dmg = [0,0], armor_bonus = 0, dodge_bonus = 0, twohand = False):
+	def __init__(self, owner, slot, base_dmg = [0,0], armor_bonus = 0, dodge_bonus = 0, twohand = False, equiptype = 'armor'):
 		self.slot = slot
 		self.owner = owner
 		self.is_equipped = False
@@ -646,7 +693,7 @@ class Equipment:
 
 
 class Item:
-	def __init__(self, owner, weight = 0, depth_level = 1, use_function = None, itemtype = 'gadget'):
+	def __init__(self, owner, weight = 0, depth_level = 1, use_function = None, itemtype = 'gadget', stack = 1):
 		self.weight = weight
 		self.owner = owner
 		self.use_function = use_function
@@ -654,17 +701,26 @@ class Item:
 		self.identified = False
 		self.already_seen = False
 		self.itemtype = itemtype
+		self.stack = stack
 		if itemtype == 'trinket': self.identified = True
-		#possible itemtypes: equipment, salve, gadget, trinket, heavy blade, light blade,
-
+		#possible itemtypes: equipment, salve, gadget, trinket, chalk
 
 	def pick_up(self):
-		if len(inventory)>=26:
+		if self.owner.name in map(lambda x: x.name, inventory) and self.itemtype in ['gadget', 'salve', 'chalk']:
+			invitem = filter(lambda x: x.name == self.owner.name, inventory)
+			invitem = invitem[0]
+			invitem.item.stack += self.stack # same thing as normal pickup but just increments to stack
+			objects.remove(self.owner)
+			message('You picked up ' + self.dname + '!', libtcod.green)
+			director.update(action = 'pick up item', object_s = self.owner)
+
+		elif len(inventory)>=26:
 			message('Your inventory is full')
 			return False
 		elif sum([item.item.weight for item in inventory]) > player.max_weight:
 			message("You're carrying too much already!")
 			return False
+
 		else:
 			inventory.append(self.owner)  # inventory has objects, not item
 			objects.remove(self.owner)
@@ -675,10 +731,12 @@ class Item:
 	def use(self):
 		if self.use_function == None:
 			message('The ' + self.owner.name + ' cannot be used.')
-		else:
-			if self.use_function() != 'cancelled':  #conditions for persistent/charge-based consumables go here
-				inventory.remove(self.owner)
-				director.update(action = 'use item', object_s = self.owner)
+		if self.itemtype == "chalk":
+			self.use_function(self)
+		elif self.use_function() != 'cancelled':  #conditions for persistent/charge-based consumables go here
+			self.stack -= 1
+			if self.stack < 1: inventory.remove(self.owner)
+			director.update(action = 'use item', object_s = self.owner)
 
 	def drop(self):
 		#add to the map and remove from the player's inventory. also, place it at the player's coordinates
@@ -714,12 +772,16 @@ class Item:
 	@property
 	def dname(self):#short for display name
 		global namekeeper
+		dname = self.owner.name
+
 		if self.owner.name in namekeeper:
 			self.already_seen = True
 
+		if self.stack > 1: dname += ' (' + str(self.stack) + ')'
+
 
 		if not self.identified:
-			if self.itemtype == 'equipment' or self.itemtype == 'heavy blade' or self.itemtype == 'light blade' or self.itemtype == 'polearm' or self.itemtype == 'staff' or self.itemtype == 'cudgel':
+			if self.itemtype == 'equipment':
 				unidname = 'an unidentified ' + self.owner.name
 			elif self.itemtype == 'salve': 
 				if not self.already_seen:
@@ -733,7 +795,17 @@ class Item:
 				else: unidname = namekeeper[self.owner.name]
 			return unidname
 
-		else: return self.owner.name
+		else: return dname
+
+	@property
+	def weight(self):
+		return self._weight * stack
+
+
+	@weight.setter
+	def weight(self, value):
+		self._weight = value
+	
 
 class StatusEffect(object): #TODO: STACKING BEHAVIOUR FOR STATUS EFFECTS
 	def __init__(self, name, duration, affected, power = 0):
@@ -759,8 +831,14 @@ class StatusEffect(object): #TODO: STACKING BEHAVIOUR FOR STATUS EFFECTS
 			return graphical.FloatingText(self.affected.owner, self.name, libtcod.violet)
 
 	def stepfunction(self):
-		if self.name == 'drawing': 
-			drawing_function(self)
+		if self.name == 'drawing':
+			if self.pen.stack > 0: 
+				drawing_function(self)
+				self.pen.stack -= 1
+			else: 
+				message('You ran out of ' + self.pen.owner.name, libtcod.light_red +'.')
+				inventory.remove(self.pen.owner)
+				self.terminate()
 		if self.name == 'DoT':
 			self.affected.take_damage(round(self.power*0.4))
 		self.duration -= 1
@@ -773,7 +851,7 @@ class GraphicalStatus(StatusEffect): #used to distinguish which status get resol
 	pass #one goes in play_game, the other in render_all -- maybe they will have some more differences eventually
 
 class Fighter:
-	def __init__(self, hp, armor, power, xp,  death_function = None, depth_level = 1):
+	def __init__(self, hp, armor, power, xp,  death_function = None, depth_level = 1, speed = 100):
 		self.max_hp = hp
 		self.hp = hp
 		self.base_armor = armor
@@ -783,7 +861,8 @@ class Fighter:
 		self.xp = xp
 		self.state = 'normal'
 		self.status = []
-
+		self.energy = 0
+		self.speed = speed
 		self.dodge = 0 # enemies don't usually dodge atm, so this is a hacky fix to make monsters able to attack other monsters
 
 
@@ -897,26 +976,48 @@ class Dmg:
 
 
 class DumbMonster:  # basic AI
-	def take_turn(self):
+	def __init__(self):
+		self.action = ''
+		self.target = None
+		self.cost = 0
+
+	def formulate_turn(self):
 		monster = self.owner
-		if monster.fighter.state == 'skip turn':
-			monster.fighter.state == 'normal'
-			return
-
 		if libtcod.map_is_in_fov(fov_map, monster.x, monster.y):
-			if monster.distance_to(player) >= 2 and len(monster.fighter.status) > 0: #if theres a status on
-				for status in monster.fighter.status:
-					if status.name == 'maim' and status.duration % 2 == 0:
-						monster.move_astar(player)
-					else: monster.move_astar(player)
-						
-
-			elif monster.distance_to(player) >= 2:
-				monster.move_astar(player)
-
+			
+			if monster.distance_to(player) >= 2:
+				self.action = 'move'
+				self.target = player
+				self.cost = self.determine_cost()
 
 			elif player.fighter.hp >= 0:
-				monster.fighter.attack(player)
+				self.action = 'attack'
+				self.target = player
+				self.cost = self.determine_cost()
+
+				
+	def determine_cost(self):
+		cost = 100
+		for stati in self.owner.fighter.status:
+			if stati.name == 'maim' and self.action == 'move': cost += 50
+			if stati.name == 'slow': cost += int(round(stati.power*1.25))
+		return cost
+
+
+	def take_turn(self):
+		while True:
+			self.formulate_turn()
+			self.cost = self.determine_cost()
+			monster = self.owner
+
+			if self.cost > monster.fighter.energy: return
+
+			monster.fighter.energy -= self.cost
+			if self.action == 'move':
+				monster.move_astar(self.target)
+
+			elif self.action == 'attack':
+				monster.fighter.attack(self.target)
 
 
 
@@ -1217,28 +1318,32 @@ class GameObj(object):
 			colorchoice = check_colorkeeper(self.name)
 			
 		elif self.name == 'scrap metal sword':
-			self.item = Item(self, weight = 7, depth_level = 2, itemtype = 'heavy blade')
-			self.equipment = Equipment(self, slot='main hand', base_dmg = [5,7])
+			self.item = Item(self, weight = 7, depth_level = 2, itemtype = 'equipment')
+			self.equipment = Equipment(self, slot='main hand', base_dmg = [5,7], equiptype = 'heavy blade')
 			
 		elif self.name == 'rebar blade':
-			self.item = Item(self, weight = 20, depth_level = 2,itemtype = 'heavy blade')
-			self.equipment = Equipment(self, slot = 'main hand', base_dmg = [10,13],  twohand = True)
+			self.item = Item(self, weight = 20, depth_level = 2,itemtype = 'equipment')
+			self.equipment = Equipment(self, slot = 'main hand', base_dmg = [10,13],  twohand = True, equiptype = 'heavy blade')
 			
 		elif self.name == 'kitchen knife':
-			self.item = Item(self, weight = 4, depth_level = 1, itemtype = 'light blade')
-			self.equipment = Equipment(self, slot='main hand', base_dmg = [3,4])
+			self.item = Item(self, weight = 4, depth_level = 2, itemtype = 'equipment')
+			self.equipment = Equipment(self, slot='main hand', base_dmg = [3,4], equiptype = 'light blade')
 			
 		elif self.name == 'metal plate':
 			self.item = Item(self, weight = 5, depth_level = 2)#weapons need itemtype, but armor can just get a slot check
-			self.equipment = Equipment(self, slot='off hand', armor_bonus = 3, dodge_bonus = 2)
+			self.equipment = Equipment(self, slot='off hand', armor_bonus = 3, dodge_bonus = 2, equiptype = 'shield')
 			
 		elif self.name == 'goat leather sandals':
 			self.item = Item(self, weight = 2, depth_level = 2)
-			self.equipment = Equipment(self, slot='feet', dodge_bonus = 2)
+			self.equipment = Equipment(self, slot='feet', dodge_bonus = 2, equiptype = 'armor')
 
 		elif self.name == "someone's memento":
 			self.item = Item(self, weight = 0.5, depth_level = 2, itemtype = 'trinket')
+			self.item.identified = True
 
+		elif self.name == "chalk":
+			self.item = Item(self, weight = 0.05, depth_level = 1, use_function = player.abl_toggle_drawing,itemtype = 'chalk', stack = 20)
+			self.item.identified = True
 
 
 
@@ -1282,9 +1387,9 @@ class Player(GameObj):#player is inherited because it's easier since it has one 
 		dmg = self.fighter.power(multipliers = [0.5])
 		dmg = dmg.resolve()
 		target.fighter.take_damage(dmg)
-		message('You put all your strength behind a mighty kick, dealing ' + str(int(round(dmg))) + ' damage.', libtcod.light_red)
+		message('You put all your strength behind a mighty kick, dealing ' + str(int(round(dmg))) + ' damage.', libtcod.light_green)
 		
-		if push(self, target, 3) < 3: message('The ' + target.name + ' slams into something violently!') 
+		if push(self, target, 3) < 3: message('The ' + target.name + ' slams into something violently!', libtcod.light_green) 
 		director.update(action = 'use ability', action_extra = 'kicklaunch', x2 = target.x, y2 = target.y)
 		return True
 # 		# ABILITY DISTANCE NUMBER
@@ -1294,24 +1399,33 @@ class Player(GameObj):#player is inherited because it's easier since it has one 
 		if not chosen_trinket: return
 		
 	def abl_consume_trinket(self, chosen_trinket = None):
-		if not chosen_trinket: chosen_trinket = inventory_menu('Choose a trinket to consume:', itemtype = 'trinket') #so you can arrive here through 't' throw or 'a' ability > fling trinket..... remember inventory_menu returns None if it's cancelled
+		if not chosen_trinket: chosen_trinket = inventory_menu('Choose a trinket to consume:', itemtype = 'trinket') #so you can arrive here through 'u' use or 'a' ability > fling trinket..... remember inventory_menu returns None if it's cancelled
 
-	def abl_toggle_drawing(self):
+	def abl_toggle_drawing(self, pen = None):
 		if 'drawing' not in [stati.name for stati in self.fighter.status]:
+			if pen == None:
+				pen = inventory_menu('Choose a drawing material.', 'chalk')
+				if pen == None: return 'didnt-take-turn'
 			player.fighter.receive_status('drawing', 0)
+			drawstatus = filter(lambda x: x.name == 'drawing', player.fighter.status)
+			drawstatus[0].pen = pen
+
+
 			director.update(action = 'start drawing')
 			drawing = RitualDraw(self.x, self.y)
 			drawdir.drawinglist.append(drawing)
-			message("You start chanting and drawing the runes of mystery...", libtcod.dark_violet)
+			if rtree.level >=1 : message("You start chanting and drawing the runes of mystery...", libtcod.dark_violet)
+			else: message("You start scribbling on the floor.")
 
 		elif director.action == "start drawing":#activating and deactivating right away draws glyphs rather than lines, this block is cleaning up activation in this event
+			if rtree.level < 1: message("You don't know how to draw glyphs.", libtcod.light_red)
 			drawdir.drawinglist.remove(drawdir.active_drawing) #adding a glyph does not add a new drawing to drawdir, it just modifies one tile in the main body of another drawing
 			wanted_status = filter(lambda x: x.name == 'drawing', self.fighter.status) #little bit of copypasted code, but this way is more readable i think
 			wanted_status[0].terminate() #there can only be one drawing status online anyway - tying it to a single toggle key makes sure of it
 
 			playertile = gamemap[player.x][player.y] #just so it's easier to write and read - points to the tile the player is standing on
 			if (playertile.special and playertile.special.name not in ['drawing', 'glyph']) or not playertile.special:
-				message('You can only draw a glyph on top of ritual lines.')
+				message('You can only draw a glyph on top of ritual lines.', libtcod.light_red)
 				return 'didnt-take-turn'
 			else:
 				director.update(action = 'draw glyph')
@@ -1464,6 +1578,7 @@ def play_game():
 		graphical.render_effects() #render effects have to be here because effects depend on object locatons, leading to wrong-looking offsets
 
 		if game_state == 'playing' and player_action != 'didnt-take-turn':  # remember to have checks for timed buffs and things like that here, otherwise things will become shitty
+			turnlord.process()
 			for object in objects:
 				if object.ai:
 					object.ai.take_turn()	
@@ -1588,9 +1703,6 @@ def handle_keys():
 			else: return 'didnt-take-turn'
 
 		elif key_char == 'd' and key.shift:#(D)raw
-			if rtree.level < 1:
-				message("You don't know how to draw.")
-				return 'didnt-take-turn'
 
 			if player.abl_toggle_drawing() == "didnt-take-turn": return 'didnt-take-turn'
 
@@ -1707,6 +1819,8 @@ def activate_ability(abil_name): #returns abil name if not cancelled, None other
 	completed = False
 	if abil_name == 'kicklaunch':
 		if player.abl_kicklaunch(): completed = True
+	elif abil_name == 'sprint':
+		if player.abl_sprint(): completed = True
 	elif abil_name == 'fling trinket':
 		if player.abl_fling_trinket(): completed = True
 	elif abil_name == 'consume trinket':
@@ -1716,7 +1830,8 @@ def activate_ability(abil_name): #returns abil name if not cancelled, None other
 
 def glyph_draw_menu():
 	glyph_choices = catalog.get_glyphs(rtree.level)
-	choice = menu('Choose a glyph to draw.', glyph_choices, SCREEN_WIDTH/2)
+	dglyph_choices = map(lambda x: x.capitalize(), glyph_choices)
+	choice = menu('Choose a glyph to draw.', dglyph_choices, SCREEN_WIDTH/2)
 
 	if choice is not None:
 		draw_glyph(glyph_choices[choice])
@@ -1725,6 +1840,7 @@ def glyph_draw_menu():
 def draw_glyph(glyphname):
 	if glyphname == 'damage glyph': glyph = 264
 	if glyphname == 'damage over time glyph': glyph = 265 #when adding new characters remember to change it in the custom_font libtcod function
+	if glyphname == 'slow glyph': glyph = 266
 	glyphtile = gamemap[player.x][player.y]
 	if glyphtile.special and glyphtile.special.name == 'drawing':
 		glyphtile.special.char = glyph
@@ -1977,6 +2093,9 @@ def generate_item(name, x, y): #RETURNS HIGHEST OBJECT, NOT ITEM OR EQUIP COMPON
 	elif name == "someone's memento":
 		item = GameObj(x,y, '*', name, libtcod.gold)
 
+	elif name == "chalk":
+		item = GameObj(x,y, 173, name, libtcod.white)
+
 	return item
 
 def generate_tile(name, x, y):
@@ -2112,7 +2231,7 @@ def inventory_menu(header, itemtype = None):
 		inv = filter(lambda x: x.item.itemtype == itemtype, inv)
 
 	if len(inv) == 0:
-		options = ['You have NOTHING!']
+		options = ['You have nothing relevant.']
 	else:
 		options = []
 		for item in inv:
@@ -2351,8 +2470,9 @@ def clear_game():
 	clear_screen()
 
 def new_game():
-	global player, game_msgs, game_state, inventory, dungeon_level, namekeeper, colorkeeper, camera, director, drawdir
-
+	global player, game_msgs, game_state, inventory, dungeon_level, namekeeper, colorkeeper, camera, director, drawdir, turnlord
+	
+	turnlord = TurnLord()
 	player = Player()
 	dungeon_level = 1
 	director = PlayerActionReport()
@@ -2424,7 +2544,7 @@ def consumable_pipegun():
 
 
 		monster.fighter.take_damage(15)
-		monster.fighter.receive_status('maim', 30)
+		monster.fighter.receive_status('slow', 30, power = 10)
 		
 
 def consumable_crudenade():
@@ -2477,6 +2597,7 @@ def drawing_function(self):
 			gamemap[x][y].special = drawntile
 			drawing = drawdir.active_drawing
 			drawing.add_drawntile(gamemap[x][y])
+
 
 
 
