@@ -26,7 +26,7 @@ class FloatingText(EffectCon):
 		self.text = text.upper() + '!'
 		self.origin = origin
 		self.color = color
-		self.blitx = int(round(origin.camx - ceil(float(width)/2)))
+		self.blitx = int(origin.camx - ceil(float(width)/2))
 		self.blity = origin.camy - (height - 1)
 		
 		activeeffects.append(self)

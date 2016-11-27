@@ -1,3 +1,9 @@
+#if you attempt to read this code
+#i am not responsible
+
+
+
+
 import libtcodpy as libtcod
 import math
 import textwrap
@@ -17,7 +23,7 @@ from floodfill import enclosed_space_processing
 #TODO: more weapons, more enemies, more consumables
 #TODO: fill out skill, perk trees
 #TODO: subskill system***?
-
+#TODO: separate combat abilities
 #window size
 SCREEN_WIDTH = 120
 SCREEN_HEIGHT = 60
@@ -64,28 +70,20 @@ LEVEL_UP_FACTOR = 75
 LEVEL_SCREEN_WIDTH = 40
 
 
-
 color_dark_wall = libtcod.Color(0, 0, 100)
 color_dark_ground = libtcod.Color(50, 50, 150)
 color_light_wall = libtcod.Color(130, 110, 50)
 color_light_ground = libtcod.Color(200, 180, 50)
 
-
-class TurnLord(object):
-	def __init__(self):
-		self.act_points = 0
-
-	def process(self):
-		self.act_points += player.fighter.speed #to be changed lated in its own method, grabbing from director for variable speed actions, but for now it's always const. player speed
-
-
-		fighterlist = filter(lambda x: x.fighter, objects)
-		fighterlist.remove(player)
-		for obj in fighterlist:
-			if libtcod.map_is_in_fov(fov_map,obj.x,obj.y): 
-				obj.fighter.energy += self.act_points
-		self.act_points = 0
-
+class PlayerStats(object):
+	def __init__(self, stats):
+		self.basestats = stats #dict
+		self.strength = stats['strength']
+		self.agility = stats['agility']
+		self.constitution = stats['constitution']
+		self.intelligence = stats['intelligence']
+		self.attunement = stats['attunement']
+						
 
 class DrawingDir(object): #singleton drawdir
 	def __init__(self): #keeps record of ritual drawings on the ground that are not yet activated, since I want the player to be able to have multiple of them set up at once
@@ -201,6 +199,7 @@ class RitualDraw(object): #each drawing main body is represented by this
 			power += 7*size
 
 		elif shape == 'enclosed': power += 7
+		power += rtree.level*2
 
 		for glyph in glyphs:
 			if glyph.special.char == 264:
@@ -351,8 +350,8 @@ class RitualDraw(object): #each drawing main body is represented by this
 				focus_cross = False
 				diamond = False
 
-			if self.focus_cross_test():
-				aoe_cross = False
+			if self.focus_cross_test(): #the it's done inside that method is much better than this filtering-down crap, perhaps i'll refactor it all into the same format later
+				aoe_cross = False #in focus_cross_test i get the bounding box and draw out what would be the correct figure, then compare the two sets of tiles
 				focus_cross = True
 				diamond = False
 
@@ -395,7 +394,8 @@ class Point:
 		self.x = x
 		self.y = y
 
-class SkillTree:
+class SkillTree:#DO NOT NEED TO BE GLOBAL. I can have them easily belong to the Player obj
+#to change later
 	def __init__(self, stype, level = 0):
 		self.stype = stype
 		self.level = level
@@ -495,7 +495,8 @@ class PerkTree(SkillTree):
 
 
 
-class Ccreation: #singleton, ccreation
+class Ccreation: #singleton, ccreation -- DOES NOT NEED TO BE A SINGLETON - its only run once at new_game, so it can just be discarded once its values get passed to player obj
+#ill change this later
 #character creation code is a bit of a mess here, but it should be understandable if you go through it line by line
 	def __init__(self, stage = 'race select', chosenrace = 'empty', chosengclass = 'empty', chosenperk = 'empty'):
 		self.stage = stage
@@ -504,11 +505,13 @@ class Ccreation: #singleton, ccreation
 		self.chosenperk = chosenperk
 
 	def run_creation(self):
-		global ptree, ctree, ttree, rtree 
-		ctree = SkillTree('combat', 1)
-		ttree = SkillTree('tech', 0)
-		rtree = SkillTree('ritual', 0)
-		ptree = PerkTree('perks', 0)
+		global player
+		player = Player()
+		player.ctree = SkillTree('combat', 1)
+		player.ttree = SkillTree('tech', 0)
+		player.rtree = SkillTree('ritual', 0)
+		player.ptree = PerkTree('perks', 0)
+
 
 		while self.stage != 'complete':
 			if self.stage == 'race select':
@@ -623,6 +626,7 @@ class Equipment:
 		self.armor_bonus = armor_bonus
 		self.twohand = twohand
 		self.special = None
+		self.equiptype = equiptype
 
 
 		self.add_base_specials()
@@ -645,11 +649,15 @@ class Equipment:
 
 		if not self.is_equipped: return
 		self.is_equipped = False
+		if self.equiptype == 'staff':
+			for statusname in ['parry staff stance', 'hammer staff stance', 'spear staff stance']:
+				status = get_status_from_name(player, statusname)
+				if status: status.terminate()
 		message('Unequipped ' + self.owner.item.dname + ' from ' + self.slot + '.', libtcod.light_yellow)
 		director.update(action = 'unequip item', object_s = self.owner)
 
 	def equip_options(self): #upon getting chosen from the equipment menu
-		options = ['Examine', 'Unequip', 'Drop']
+		options = ['Examine', 'Unequip', 'Drop', 'Use']
 		index = menu('Choose an action: ', options, 50)
 		if index == 0:
 			self.owner.item.examine()
@@ -663,6 +671,10 @@ class Equipment:
 			self.unequip() # this is redundant because it's in the item drop method but i'm gonna leave it here, just in case
 			self.owner.item.drop()
 			return 'drop'
+
+		elif index == 3: #drop (and unequip)
+			self.owner.item.use()
+			return 'use'
 
 	def roll_dmg(self):
 		if self.base_dmg == [0,0]: return 0
@@ -685,6 +697,13 @@ class Equipment:
 					if libtcod.random_get_float(0,0,1) <= enchant.value:
 						target.fighter.receive_status('maim', enchant.duration)
 						message('Your attack maims the enemy!', libtcod.light_blue)
+				elif enchant.name == 'stun chance':
+					if libtcod.random_get_float(0,0,1) <= enchant.value:
+						target.fighter.receive_status('stun', enchant.duration)
+						message('Your attack stuns the enemy!', libtcod.light_blue)
+
+		if self.equiptype == 'staff' and get_status_from_name(player, 'hammer staff stance'):
+			bonusdmg.add(origin.stats['strength'] * 0.5)
 
 		return bonusdmg
 
@@ -702,27 +721,27 @@ class Item:
 		self.already_seen = False
 		self.itemtype = itemtype
 		self.stack = stack
-		if itemtype == 'trinket': self.identified = True
+		if itemtype in ['trinket', 'chalk']: self.identified = True
 		#possible itemtypes: equipment, salve, gadget, trinket, chalk
 
 	def pick_up(self):
-		if self.owner.name in map(lambda x: x.name, inventory) and self.itemtype in ['gadget', 'salve', 'chalk']:
-			invitem = filter(lambda x: x.name == self.owner.name, inventory)
+		if self.owner.name in map(lambda x: x.name, player.inventory) and self.itemtype in ['gadget', 'salve', 'chalk']:
+			invitem = filter(lambda x: x.name == self.owner.name, player.inventory)
 			invitem = invitem[0]
 			invitem.item.stack += self.stack # same thing as normal pickup but just increments to stack
 			objects.remove(self.owner)
 			message('You picked up ' + self.dname + '!', libtcod.green)
 			director.update(action = 'pick up item', object_s = self.owner)
 
-		elif len(inventory)>=26:
+		elif len(player.inventory)>=26:
 			message('Your inventory is full')
 			return False
-		elif sum([item.item.weight for item in inventory]) > player.max_weight:
+		elif sum([item.item.weight for item in player.inventory]) > player.max_weight:
 			message("You're carrying too much already!")
 			return False
 
 		else:
-			inventory.append(self.owner)  # inventory has objects, not item
+			player.inventory.append(self.owner)  # inventory has objects, not item
 			objects.remove(self.owner)
 			message('You picked up ' + self.dname + '!', libtcod.green)
 			director.update(action = 'pick up item', object_s = self.owner)
@@ -733,15 +752,15 @@ class Item:
 			message('The ' + self.owner.name + ' cannot be used.')
 		if self.itemtype == "chalk":
 			self.use_function(self)
-		elif self.use_function() != 'cancelled':  #conditions for persistent/charge-based consumables go here
+		elif self.use_function() != 'cancelled' and self.itemtype != 'equipment':  #conditions for persistent/charge-based consumables go here
 			self.stack -= 1
-			if self.stack < 1: inventory.remove(self.owner)
+			if self.stack < 1: player.inventory.remove(self.owner)
 			director.update(action = 'use item', object_s = self.owner)
 
 	def drop(self):
 		#add to the map and remove from the player's inventory. also, place it at the player's coordinates
 		objects.insert(0,self.owner)
-		inventory.remove(self.owner)
+		player.inventory.remove(self.owner)
 		if self.owner.equipment and self.owner.equipment.is_equipped: self.owner.equipment.unequip()
 		self.owner.x = player.x
 		self.owner.y = player.y
@@ -812,7 +831,7 @@ class StatusEffect(object): #TODO: STACKING BEHAVIOUR FOR STATUS EFFECTS
 		self.name = name
 		self.duration = duration
 		if duration == 0: self.duration = -1 #unlimited
-		self.affected = affected
+		self.affected = affected #affected is fighter
 		self.startfunction()
 		self.power = power
 
@@ -829,6 +848,8 @@ class StatusEffect(object): #TODO: STACKING BEHAVIOUR FOR STATUS EFFECTS
 	def startfunction(self):
 		if self.name == 'maim':
 			return graphical.FloatingText(self.affected.owner, self.name, libtcod.violet)
+		if self.name == 'stun':
+			return graphical.FloatingText(self.affected.owner, self.name, libtcod.yellow)
 
 	def stepfunction(self):
 		if self.name == 'drawing':
@@ -837,15 +858,30 @@ class StatusEffect(object): #TODO: STACKING BEHAVIOUR FOR STATUS EFFECTS
 				self.pen.stack -= 1
 			else: 
 				message('You ran out of ' + self.pen.owner.name, libtcod.light_red +'.')
-				inventory.remove(self.pen.owner)
+				player.inventory.remove(self.pen.owner)
 				self.terminate()
-		if self.name == 'DoT':
+		elif self.name == 'DoT':
 			self.affected.take_damage(round(self.power*0.4))
+		elif self.name == 'stun':
+			self.affected.energy = 0
+			message('The '+ self.affected.owner.name + ' is too stunned to act.', libtcod.light_blue)
+		elif self.name == 'sprint':
+			if isinstance(self.affected.owner, Player):
+				if director.action == 'move':
+					player.act_points -= player.fighter.speed/3
+		elif self.name == 'sprint exhaustion':
+			if isinstance(self.affected.owner, Player):
+				player.act_points += player.fighter.speed/3
 		self.duration -= 1
 
 
 	def endfunction(self):
-		pass
+		if self.name == 'sprint':
+			message("You stop sprinting. You're exhausted, slowing you down.")
+			self.affected.receive_status('sprint exhaustion', 20)
+
+		if self.name == 'sprint exhaustion':
+			message("You're no longer exhausted. You can sprint again.")
 
 class GraphicalStatus(StatusEffect): #used to distinguish which status get resolved at frame-speed and which at turn-speed
 	pass #one goes in play_game, the other in render_all -- maybe they will have some more differences eventually
@@ -891,8 +927,20 @@ class Fighter:
 				if not target.fighter: break #if target dies in between multiattacks, exit loop
 
 				damage = self.power()
+				weapon = get_equipped_in_slot('main hand')
+
 				for equip in get_all_equipped(self.owner):#equivalent to global player
 					damage.add(equip.apply_on_atk_bonus(self.owner, target))
+
+				if weapon and weapon.equiptype == 'polearm':
+					if self.owner.distance_to(target) < 2:
+						polearm_penalty = get_enchant_value(get_equipped_in_slot('main hand'), 'polearm reach')
+						damage.add(Dmg(0, polearm_penalty, 0)) #multiplier
+
+				if weapon and weapon.equiptype == 'staff' and get_status_from_name(player, 'spear staff stance') and self.owner.distance_to(target) < 2:
+					damage.add(Dmg(0, 0.5, 0))
+
+
 				finaldmg = damage.resolve()
 				finaldmg -= target.fighter.armor
 
@@ -926,12 +974,17 @@ class Fighter:
 			flat_bonus = 3
 			equiproll = 0
 			multiplicative_component = 0
+
 			for equip in equipments: 
 				equiproll += equip.roll_dmg()
-
-			combat_flatbonus = ctree.level * 2
-			flat_bonus += combat_flatbonus
 			multiplicative_component += equiproll
+
+			combat_flatbonus = player.ctree.level * 2
+			flat_bonus += combat_flatbonus
+
+
+
+			
 			return Dmg(multiplicative_component, product(multipliers), flat_bonus)
 
 		else:
@@ -998,9 +1051,10 @@ class DumbMonster:  # basic AI
 				
 	def determine_cost(self):
 		cost = 100
-		for stati in self.owner.fighter.status:
-			if stati.name == 'maim' and self.action == 'move': cost += 50
-			if stati.name == 'slow': cost += int(round(stati.power*1.25))
+		if self.owner is not player:
+			for stati in self.owner.fighter.status:
+				if stati.name == 'maim' and self.action == 'move': cost += 50
+				if stati.name == 'slow': cost += int(round(stati.power*1.25))
 		return cost
 
 
@@ -1230,9 +1284,22 @@ class GameObj(object):
 			#Find the next coordinates in the computed full path
 			x, y = libtcod.path_walk(my_path, True)
 			if x or y:
+				if get_equipped_in_slot('main hand'):
+					if get_equipped_in_slot('main hand').equiptype == 'polearm' and distance_between(Point(player.x, player.y), Point(x, y)) < 2 and not isinstance(self, Player):
+						chance = get_enchant_value(get_equipped_in_slot('main hand'), 'polearm defense')
+						if libtcod.random_get_float(0, 0, 1) < chance:
+							message('You fend the ' + self.name + ' off with your weapon.')
+							return #add agility, strength components here later
+
+					if get_equipped_in_slot('main hand').equiptype == 'staff' and get_status_from_name(player, 'spear staff stance') and distance_between(Point(player.x, player.y), Point(x, y)) < 2 and not isinstance(self, Player):
+						if libtcod.random_get_float(0, 0, 1) < 0.4:
+							message('You fend the ' + self.name + ' off with your staff.')
+							return
+
 				#Set self's coordinates to the next path tile
 				self.x = x
 				self.y = y
+
 				if gamemap[self.x][self.y].special and gamemap[self.x][self.y].special.onwalk_effect:
 					gamemap[self.x][self.y].special.apply_onwalk(self)
 		else:
@@ -1291,6 +1358,7 @@ class GameObj(object):
 		dy = other.y - self.y
 		return math.sqrt(dx ** 2 + dy ** 2)
 
+
 	def distance(self,x,y):
 		return math.sqrt((x - self.x) ** 2 + (y - self.y) ** 2)
 
@@ -1319,31 +1387,44 @@ class GameObj(object):
 			
 		elif self.name == 'scrap metal sword':
 			self.item = Item(self, weight = 7, depth_level = 2, itemtype = 'equipment')
-			self.equipment = Equipment(self, slot='main hand', base_dmg = [5,7], equiptype = 'heavy blade')
+			self.equipment = Equipment(self, slot='main hand', base_dmg = [4,7], equiptype = 'heavy blade')
 			
 		elif self.name == 'rebar blade':
 			self.item = Item(self, weight = 20, depth_level = 2,itemtype = 'equipment')
-			self.equipment = Equipment(self, slot = 'main hand', base_dmg = [10,13],  twohand = True, equiptype = 'heavy blade')
+			self.equipment = Equipment(self, slot = 'main hand', base_dmg = [8,11], twohand = True, equiptype = 'heavy blade')
+
+		elif self.name == 'sharpened stick':
+			self.item = Item(self, weight = 6, depth_level = 2,itemtype = 'equipment')
+			self.equipment = Equipment(self, slot = 'main hand', base_dmg = [9,11], equiptype = 'polearm')
+
+		elif self.name == 'heavy broomstick':
+			self.item = Item(self, weight = 10, depth_level = 2,itemtype = 'equipment')
+			self.equipment = Equipment(self, slot = 'main hand', base_dmg = [6,8], twohand = True, equiptype = 'staff')
 			
 		elif self.name == 'kitchen knife':
 			self.item = Item(self, weight = 4, depth_level = 2, itemtype = 'equipment')
 			self.equipment = Equipment(self, slot='main hand', base_dmg = [3,4], equiptype = 'light blade')
+
+		elif self.name == 'baseball bat':
+			self.item = Item(self, weight = 10, depth_level = 2, itemtype = 'equipment')
+			self.equipment = Equipment(self, slot='main hand', base_dmg = [4,7], twohand = True, equiptype = 'cudgel')
 			
 		elif self.name == 'metal plate':
-			self.item = Item(self, weight = 5, depth_level = 2)#weapons need itemtype, but armor can just get a slot check
+			self.item = Item(self, weight = 5, depth_level = 2, itemtype = 'equipment')#weapons need itemtype, but armor can just get a slot check
 			self.equipment = Equipment(self, slot='off hand', armor_bonus = 3, dodge_bonus = 2, equiptype = 'shield')
 			
 		elif self.name == 'goat leather sandals':
-			self.item = Item(self, weight = 2, depth_level = 2)
+			self.item = Item(self, weight = 2, depth_level = 2, itemtype = 'equipment')
 			self.equipment = Equipment(self, slot='feet', dodge_bonus = 2, equiptype = 'armor')
 
 		elif self.name == "someone's memento":
 			self.item = Item(self, weight = 0.5, depth_level = 2, itemtype = 'trinket')
-			self.item.identified = True
 
 		elif self.name == "chalk":
-			self.item = Item(self, weight = 0.05, depth_level = 1, use_function = player.abl_toggle_drawing,itemtype = 'chalk', stack = 20)
-			self.item.identified = True
+			self.item = Item(self, weight = 0.05, depth_level = 1, itemtype = 'chalk', stack = 20)
+
+		if self.equipment and self.equipment.equiptype == 'staff': self.item.use_function = player.abl_staff_stance
+		if self.item.itemtype == 'chalk': self.item.use_function = player.abl_toggle_drawing
 
 
 
@@ -1371,6 +1452,9 @@ class Player(GameObj):#player is inherited because it's easier since it has one 
 		self.stats = stats
 		self.perks = perks
 		self.lvl = 1
+		self.dodgemod = {}
+		self.act_points = 0
+		self.inventory = []
 		#self.abilities
 
 		############################################################################
@@ -1393,7 +1477,13 @@ class Player(GameObj):#player is inherited because it's easier since it has one 
 		director.update(action = 'use ability', action_extra = 'kicklaunch', x2 = target.x, y2 = target.y)
 		return True
 # 		# ABILITY DISTANCE NUMBER
-
+	def abl_sprint(self):
+		statuslist = filter(lambda x: x.name in ['sprint', 'sprint exhaustion'], self.fighter.status)
+		if len(statuslist) == 0: 
+			message('You start sprinting.')
+			self.fighter.receive_status('sprint', 15)
+		elif statuslist[0] == 'sprint': message("You're already sprinting.") 
+		elif statuslist[0] == 'sprint exhaustion': message("You're exhausted.") 
 	def abl_fling_trinket(self, chosen_trinket = None):
 		if not chosen_trinket: chosen_trinket = inventory_menu('Choose a trinket to throw:', itemtype = 'trinket') #so you can arrive here through 't' throw or 'a' ability > fling trinket..... remember inventory_menu returns None if it's cancelled
 		if not chosen_trinket: return
@@ -1414,11 +1504,11 @@ class Player(GameObj):#player is inherited because it's easier since it has one 
 			director.update(action = 'start drawing')
 			drawing = RitualDraw(self.x, self.y)
 			drawdir.drawinglist.append(drawing)
-			if rtree.level >=1 : message("You start chanting and drawing the runes of mystery...", libtcod.dark_violet)
+			if player.rtree.level >=1 : message("You start chanting and drawing the runes of mystery...", libtcod.dark_violet)
 			else: message("You start scribbling on the floor.")
 
 		elif director.action == "start drawing":#activating and deactivating right away draws glyphs rather than lines, this block is cleaning up activation in this event
-			if rtree.level < 1: message("You don't know how to draw glyphs.", libtcod.light_red)
+			if player.rtree.level < 1: message("You don't know how to draw glyphs.", libtcod.light_red)
 			drawdir.drawinglist.remove(drawdir.active_drawing) #adding a glyph does not add a new drawing to drawdir, it just modifies one tile in the main body of another drawing
 			wanted_status = filter(lambda x: x.name == 'drawing', self.fighter.status) #little bit of copypasted code, but this way is more readable i think
 			wanted_status[0].terminate() #there can only be one drawing status online anyway - tying it to a single toggle key makes sure of it
@@ -1441,12 +1531,84 @@ class Player(GameObj):#player is inherited because it's easier since it has one 
 			drawdir.active_drawing.concluded = True  #it's a closed loop together with the drawing status so there should be no problems
 			return 'didnt-take-turn'
 
+	def abl_staff_stance(self):
+		choices = ['Hammer stance', 'Spear stance', 'Parry stance']
+		index = menu('Choose a staff stance.', choices, 50)
+		if index is not None:
+			for statusname in ['hammer staff stance', 'parry staff stance', 'spear staff stance']:
+				status = get_status_from_name(player, statusname)
+				if status: status.terminate()
+			if index == 0: 
+				player.fighter.receive_status('hammer staff stance', 0)
+			elif index == 1: 
+				player.fighter.receive_status('spear staff stance', 0)
+			elif index == 2: 
+				player.fighter.receive_status('parry staff stance', 0)
+		director.update(action = 'change staff stance', object_s = get_equipped_in_slot('main hand').owner)
+
+###########################################################################################################3
+###########################################################################################################
+
+	def speed_process(self):
+		self.act_points += self.fighter.speed #to be changed lated in its own method, grabbing from director for variable speed actions, but for now it's always const. player speed
+
+		if director.action == 'change staff stance':
+			self.act_points /= 2
+
+
+		fighterlist = filter(lambda x: x.fighter, objects)
+		fighterlist.remove(self)
+		for obj in fighterlist:
+			if libtcod.map_is_in_fov(fov_map,obj.x,obj.y): 
+				obj.fighter.energy += self.act_points
+
+		self.act_points = 0
+
+	def move_command(self,dx,dy):
+		global fov_recompute
+
+		x = self.x + dx
+		y = self.y + dy
+
+
+		if is_blocked(x, y): 
+			message("Can't move there.")
+			return 'didnt-take-turn'
+		self.move(dx,dy)
+		fov_recompute = True
+
+	def attack_command(self,dx, dy):
+
+
+		target = None
+		weapon = get_equipped_in_slot('main hand')
+		if weapon:
+			if weapon.equiptype == 'polearm' or (weapon.equiptype == "staff" and get_status_from_name(self, 'spear staff stance')):
+				x = self.x + 2*dx
+				y = self.y + 2*dy
+				for obj in objects:
+					if obj.fighter and obj.x == x and obj.y == y:
+						target = obj
+						break
+
+		x = self.x + dx
+		y = self.y + dy
+		for obj in objects:
+			if obj.fighter and obj.x == x and obj.y == y:
+				target = obj
+				break
+
+
+
+		if target is not None:
+			self.fighter.attack(target)
+
 
 
 	@property
 	def abilities(self):
 		abilitylist = []
-		for tree in (ctree, ttree, rtree, ptree):
+		for tree in (player.ctree, player.ttree, player.rtree, player.ptree):
 			for node in tree.nodetable:
 				if node.abilities != None and node.leveled:
 					abilitylist += node.abilities
@@ -1454,20 +1616,41 @@ class Player(GameObj):#player is inherited because it's easier since it has one 
 		return self._abilities
 
 	@property
+	def cabilities(self):
+		abilitylist = []
+		for node in player.ctree.nodetable:
+			if node.abilities != None and node.leveled:
+				abilitylist += node.abilities
+		self._abilities = abilitylist
+		return self._abilities
+
+
+	@property
 	def max_weight(self):
 		maxweight = self.stats['strength'] * 40
 		return maxweight
 
 	@property
-	def dodge(self):
-		dodge = self.stats['agility']
-		dodge += sum([equip.dodge_bonus for equip in get_all_equipped(player)])
+	def basedodge(self): #figure out a better system for this and stats
+		basedodge = self.stats['agility']
 		dodgepercentage = self.stats['agility'] * 14 / 100
-		dodge *= dodgepercentage
+		basedodge *= dodgepercentage
+
+		return basedodge
+
+	@property
+	def dodge(self):
+		basedodge = self.basedodge
+		dodge = basedodge
+
+		if get_equipped_in_slot('main hand') and get_equipped_in_slot('main hand').equiptype == 'staff' and get_status_from_name(self, 'parry staff stance'):
+			dodge *= 2
+
+		eqdodge = sum([equip.dodge_bonus for equip in get_all_equipped(player)])
+		dodge += eqdodge
+
 		return dodge
 	
-	
-
 
 def tree_lvlup():
 	options = ['Combat', 'Tech', 'Ritual']
@@ -1476,11 +1659,11 @@ def tree_lvlup():
 		index = menu('Choose skill tree', options, SCREEN_WIDTH)
 		if index is None or index not in [0,1,2]: continue
 		elif index is 0:
-			if ctree.node_select(): break
+			if player.ctree.node_select(): break
 		elif index is 1:
-			if ttree.node_select(): break
+			if player.ttree.node_select(): break
 		elif index is 2:
-			if rtree.node_select(): break
+			if player.rtree.node_select(): break
 
 
 
@@ -1521,7 +1704,6 @@ def save_game():
 	file['gamemap'] = gamemap
 	file['objects'] = objects
 	file['player_index'] = objects.index(player)  #index of player in objects list
-	file['inventory'] = inventory
 	file['game_msgs'] = game_msgs
 	file['game_state'] = game_state
 	file['dungeon_level'] = dungeon_level
@@ -1530,13 +1712,12 @@ def save_game():
  
 def load_game():
 	#open the previously saved shelve and load the game data
-	global gamemap, objects, player, inventory, game_msgs, game_state, dungeon_level, stairs
+	global gamemap, objects, player, game_msgs, game_state, dungeon_level, stairs
 
 	file = shelve.open('savegame', 'r')
 	gamemap = file['gamemap']
 	objects = file['objects']
 	player = objects[file['player_index']]  #get index of player in objects list and access it
-	inventory = file['inventory']
 	game_msgs = file['game_msgs']
 	game_state = file['game_state']
 	dungeon_level = file['dungeon_level']
@@ -1578,14 +1759,13 @@ def play_game():
 		graphical.render_effects() #render effects have to be here because effects depend on object locatons, leading to wrong-looking offsets
 
 		if game_state == 'playing' and player_action != 'didnt-take-turn':  # remember to have checks for timed buffs and things like that here, otherwise things will become shitty
-			turnlord.process()
+			player.speed_process()
 			for object in objects:
-				if object.ai:
-					object.ai.take_turn()	
 				if object.fighter and len(object.fighter.status) > 0:
 					for stati in object.fighter.status:
 						if not isinstance(stati, GraphicalStatus): stati.activate()
-
+				if object.ai:
+					object.ai.take_turn()	
 
 		if player_action == 'exit':
 			save_game()
@@ -1615,23 +1795,22 @@ def check_lvlup():
 			player.fighter.armor += 1
 
 def get_equipped_in_slot(slot):  #returns the equipment in a slot, or None if it's empty
-
-	for obj in inventory:
-		if obj.equipment and obj.equipment.slot == slot and obj.equipment.is_equipped:
-			return obj.equipment
-
 	if slot == 'off hand':                     #
 		wep = get_equipped_in_slot('main hand')# twohander special case
 		if wep and wep.twohand: return wep      #
 
+	for obj in player.inventory:
+		if obj.equipment and obj.equipment.slot == slot and obj.equipment.is_equipped:
+			return obj.equipment
 
 
-	return
+
+
 
 def get_all_equipped(obj):  #returns a list of equipped items
 	if obj == player:
 		equipped_list = []
-		for item in inventory:
+		for item in player.inventory:
 			if item.equipment and item.equipment.is_equipped:
 				equipped_list.append(item.equipment)
 		return equipped_list
@@ -1660,32 +1839,61 @@ def handle_keys():
 	#movement
 	if game_state == 'playing':
 
-		if key.vk == libtcod.KEY_KP8:
-			player_move_or_attack(0,-1)
+		if key.vk == libtcod.KEY_KP8 and not key.lctrl:
+			if player.move_command(0,-1): return 'didnt-take-turn'
 
-		elif key.vk == libtcod.KEY_KP2:
-			player_move_or_attack(0,1)
+		elif key.vk == libtcod.KEY_KP2 and not key.lctrl:
+			if player.move_command(0,1): return 'didnt-take-turn'
 
-		elif key.vk == libtcod.KEY_KP4:
-			player_move_or_attack(-1,0)
+		elif key.vk == libtcod.KEY_KP4 and not key.lctrl:
+			if player.move_command(-1,0): return 'didnt-take-turn'
 
-		elif key.vk == libtcod.KEY_KP6:
-			player_move_or_attack(1,0)
+		elif key.vk == libtcod.KEY_KP6 and not key.lctrl:
+			if player.move_command(1,0): return 'didnt-take-turn'
 
-		elif key.vk == libtcod.KEY_KP9:
-			player_move_or_attack(1,-1)
+		elif key.vk == libtcod.KEY_KP9 and not key.lctrl:
+			if player.move_command(1,-1): return 'didnt-take-turn'
 
-		elif key.vk == libtcod.KEY_KP7:
-			player_move_or_attack(-1,-1)
+		elif key.vk == libtcod.KEY_KP7 and not key.lctrl:
+			if player.move_command(-1,-1): return 'didnt-take-turn'
 
-		elif key.vk == libtcod.KEY_KP1:
-			player_move_or_attack(-1,1)
+		elif key.vk == libtcod.KEY_KP1 and not key.lctrl:
+			if player.move_command(-1,1): return 'didnt-take-turn'
 
-		elif key.vk == libtcod.KEY_KP3:
-			player_move_or_attack(1,1)
+		elif key.vk == libtcod.KEY_KP3 and not key.lctrl:
+			if player.move_command(1,1): return 'didnt-take-turn'
 
-		elif key.vk == libtcod.KEY_KP5:
+		elif key.vk == libtcod.KEY_KP5 and not key.lctrl:
 			director.update(action = 'wait')
+
+
+		elif key.vk == libtcod.KEY_KP8 and key.lctrl:
+			player.attack_command(0,-1)
+
+		elif key.vk == libtcod.KEY_KP2 and key.lctrl:
+			player.attack_command(0,1)
+
+		elif key.vk == libtcod.KEY_KP4 and key.lctrl:
+			player.attack_command(-1,0)
+
+		elif key.vk == libtcod.KEY_KP6 and key.lctrl:
+			player.attack_command(1,0)
+
+		elif key.vk == libtcod.KEY_KP9 and key.lctrl:
+			player.attack_command(1,-1)
+
+		elif key.vk == libtcod.KEY_KP7 and key.lctrl:
+			player.attack_command(-1,-1)
+
+		elif key.vk == libtcod.KEY_KP1 and key.lctrl:
+			player.attack_command(-1,1)
+
+		elif key.vk == libtcod.KEY_KP3 and key.lctrl:
+			player.attack_command(1,1)
+
+		elif key.vk == libtcod.KEY_KP5 and key.lctrl:
+			director.update(action = 'wait')
+
 
 
 		elif key_char == 'g': #(g)et
@@ -1707,7 +1915,7 @@ def handle_keys():
 			if player.abl_toggle_drawing() == "didnt-take-turn": return 'didnt-take-turn'
 
 		elif key_char == 'e' and key.shift:#(E)voke drawing:
-			if rtree.level < 1:
+			if player.rtree.level < 1:
 				message("You don't know how to evoke.")
 				return 'didnt-take-turn'
 
@@ -1781,7 +1989,7 @@ def handle_keys():
 					message("You can't go down here!")
 
 
-			elif key_char == 'c':
+			elif key_char == 's':
 				#show (c)haracter information
 				level_up_xp = LEVEL_UP_BASE + player.lvl * LEVEL_UP_FACTOR
 				msgbox('Character Information\n\nLevel: ' + str(player.lvl) + '\nExperience: ' + str(player.fighter.xp) +
@@ -1815,6 +2023,8 @@ def ability_menu(): #returns ability name if ability goes through, None if its c
 		return activate_ability(ability_choices[choice]) #activates ability if its not cancelled, then returns ability name or None depending on whether it got cancelled
 	else: return
 
+
+
 def activate_ability(abil_name): #returns abil name if not cancelled, None otherwise
 	completed = False
 	if abil_name == 'kicklaunch':
@@ -1829,7 +2039,7 @@ def activate_ability(abil_name): #returns abil name if not cancelled, None other
 	if completed == True: return abil_name
 
 def glyph_draw_menu():
-	glyph_choices = catalog.get_glyphs(rtree.level)
+	glyph_choices = catalog.get_glyphs(player.rtree.level)
 	dglyph_choices = map(lambda x: x.capitalize(), glyph_choices)
 	choice = menu('Choose a glyph to draw.', dglyph_choices, SCREEN_WIDTH/2)
 
@@ -2063,9 +2273,9 @@ def check_colorkeeper(name):
 
 
 def generate_item(name, x, y): #RETURNS HIGHEST OBJECT, NOT ITEM OR EQUIP COMPONENT #to add a new item, it has to be added here, to get_item_components, to catalog.FULL_INAMELIST, to descriptions in catalog
-	if name == 'healing salve':  #only basic stats go here, for special functions and descriptions go to catalog
+	if name == 'healing salve':  #if you want to add a new special you have to go to catalog as well
 		colorchoice = check_colorkeeper(name)
-		item = GameObj(x, y, '!', name, colorchoice, None, None, None,)
+		item = GameObj(x, y, '!', name, colorchoice, None, None, None)
 
 	elif name == 'pipe gun':
 		colorchoice = check_colorkeeper(name)
@@ -2084,6 +2294,9 @@ def generate_item(name, x, y): #RETURNS HIGHEST OBJECT, NOT ITEM OR EQUIP COMPON
 	elif name == 'kitchen knife':
 		item = GameObj(x, y, '/', name, libtcod.darker_sepia, ignore_fov = True)
 
+	elif name == 'baseball bat':
+		item = GameObj(x, y, '/', name, libtcod.darker_sepia )
+
 	elif name == 'metal plate':
 		item = GameObj(x, y, '[', name, libtcod.light_grey )
 
@@ -2096,6 +2309,13 @@ def generate_item(name, x, y): #RETURNS HIGHEST OBJECT, NOT ITEM OR EQUIP COMPON
 	elif name == "chalk":
 		item = GameObj(x,y, 173, name, libtcod.white)
 
+	elif name == "sharpened stick":
+		item = GameObj(x,y, '/', name, libtcod.dark_sepia)
+
+	elif name == "heavy broomstick":
+		item = GameObj(x,y, '/', name, libtcod.darkest_sepia)
+
+	print name
 	return item
 
 def generate_tile(name, x, y):
@@ -2152,24 +2372,6 @@ def product(iterable):
 		return p
 	else: return iterable
 
-def player_move_or_attack(dx,dy):
-	global fov_recompute
-
-	x = player.x + dx
-	y = player.y + dy
-
-	target = None
-	for obj in objects:
-		if obj.fighter and obj.x == x and obj.y == y:
-			target = obj
-			break
-
-
-	if target is not None:
-		player.fighter.attack(target)
-	else:
-		player.move(dx,dy)
-		fov_recompute = True
 
 def player_death(player):
 
@@ -2183,7 +2385,6 @@ def player_death(player):
 def monster_death(monster):
 	message('The ' + monster.name + ' dies, gurgling blood.')
 	monster.char = '%'
-	monster.color = libtcod.dark_red
 	monster.blocks = False
 	monster.fighter = None
 	monster.ai = None
@@ -2225,7 +2426,7 @@ def initialize_fov():
 
 
 def inventory_menu(header, itemtype = None):
-	inv = filter(lambda x: not x.equipment or x.equipment not in get_all_equipped(player), inventory)
+	inv = filter(lambda x: not x.equipment or x.equipment not in get_all_equipped(player), player.inventory)
 
 	if itemtype:
 		inv = filter(lambda x: x.item.itemtype == itemtype, inv)
@@ -2245,7 +2446,7 @@ def inventory_menu(header, itemtype = None):
 def action_equip_menu(header):
 	options = []
 	output_item = []
-	inv = filter(lambda x: x.equipment != None, inventory)
+	inv = filter(lambda x: x.equipment != None, player.inventory)
 	inv = filter(lambda x: x.equipment not in get_all_equipped(player), inv)
 	for item in inv:
 		options.append(item.item.dname)
@@ -2459,25 +2660,22 @@ def target_monster(max_range=None):
 		message('Nothing to target there!', libtcod.grey)
 
 def clear_game():
-	global objects, inventory
+	global objects
 
 	for obj in objects:
 		obj.clear()
 		objects.remove(obj)
-	for item in inventory:
-		inventory.remove(item)
+	for item in player.inventory:
+		player.inventory.remove(item)
 
 	clear_screen()
 
 def new_game():
-	global player, game_msgs, game_state, inventory, dungeon_level, namekeeper, colorkeeper, camera, director, drawdir, turnlord
+	global player, game_msgs, game_state, dungeon_level, namekeeper, colorkeeper, camera, director, drawdir
 	
-	turnlord = TurnLord()
-	player = Player()
 	dungeon_level = 1
 	director = PlayerActionReport()
 	drawdir = DrawingDir()
-	inventory = []
 	namekeeper = {}
 	colorkeeper = {}
 	game_msgs = []
@@ -2491,8 +2689,8 @@ def new_game():
 
 	game_state = 'playing'
 
-	item = generate_item('pipe gun', 0, 0)
-	inventory.append(item)
+	item = generate_item('heavy broomstick', 0, 0)
+	player.inventory.append(item)
 
 
 	
@@ -2544,8 +2742,12 @@ def consumable_pipegun():
 
 
 		monster.fighter.take_damage(15)
-		monster.fighter.receive_status('slow', 30, power = 10)
+		monster.fighter.receive_status('maim', 30)
 		
+def get_status_from_name(subject, statusname):
+	status = filter(lambda x: x.name == statusname, [stati for stati in subject.fighter.status])
+	if status: return status[0]
+
 
 def consumable_crudenade():
 	x, y = target_tile()
@@ -2561,7 +2763,7 @@ def consumable_crudenade():
 
 def pass_node_requirements(node):
 	if node == 'shield focus':
-		if ctree.level >= 1: return True
+		if player.ctree.level >= 1: return True
 	else: return False
 
 def get_multiattack_number():
@@ -2599,7 +2801,10 @@ def drawing_function(self):
 			drawing.add_drawntile(gamemap[x][y])
 
 
-
+def distance_between(p1, p2): #p1 p2 tuples
+	dx = p1.x - p2.x
+	dy = p1.y - p2.y
+	return math.sqrt(dx**2 + dy**2)
 
 def determine_orientation(dxl, dyl):
 	orient = ''
@@ -2623,6 +2828,13 @@ def determine_orientation(dxl, dyl):
 		orient = 'from s'
 
 	return orient
+
+def get_enchant_value(equipment, enchantname):
+	enchant = [filter(lambda x: x.name == enchantname, equipment.special.enchantlist)]
+	enchant = enchant[0][0]
+	enchant = enchant.value
+	return enchant
+
 
 def determine_drawchar(prevchar):
 	char = 'E' # for error
@@ -2701,7 +2913,7 @@ def determine_drawchar(prevchar):
 libtcod.console_set_custom_font('Terminus.png', libtcod.FONT_LAYOUT_ASCII_INROW, nb_char_horiz=16, nb_char_vertic=17)
 libtcod.console_init_root(SCREEN_WIDTH, SCREEN_HEIGHT, 'python/libtcod tutorial', False)
 libtcod.sys_set_fps(LIMIT_FPS)
-libtcod.console_map_ascii_codes_to_font(256, 11, 0, 16)
+libtcod.console_map_ascii_codes_to_font(256, 16, 0, 16)
 con = libtcod.console_new(CAMERA_WIDTH, CAMERA_HEIGHT)
 panel = libtcod.console_new(SCREEN_WIDTH, PANEL_HEIGHT)
 main_menu()
