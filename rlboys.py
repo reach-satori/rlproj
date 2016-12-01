@@ -1,4 +1,4 @@
-#if you attempt to read this code
+#if anyone attempts to read this code
 #i am not responsible
 
 
@@ -10,10 +10,12 @@ import textwrap
 import shelve
 from random import gauss, uniform
 from collections import deque
+from ritualdraw import RitualDraw
+
 #===============#
 import catalog
 import graphical
-from floodfill import enclosed_space_processing
+from utility import *
 
 #TODO: big todos:
 #TODO: Graphical effects(floating text, floating numbers maybe, blood, buff effects)##floating text done
@@ -146,253 +148,6 @@ class PlayerActionReport(object): #singleton, director
 		# if len(self.recorder) > 50: self.recorder.pop(0) #rolling list
 		#commented out because the max length is set by deque in the __init__ of this object
 
-class RitualDraw(object): #each drawing main body is represented by this
-	def __init__(self, originx, originy):
-		self.length = 1
-		self.originx = originx
-		self.originy = originy
-		self.drawntile_list = []
-		self.concluded = False
-		self.spent = False
-
-	def get_glyphs(self):
-		glyphtile_list = filter(lambda tile: tile.special.name == 'glyph', self.drawntile_list)
-		return glyphtile_list
-
-
-	def add_drawntile(self, tile): #list of gamemap tiles involved
-		self.drawntile_list.append(tile)
-
-	def diagonal_exception(self): #i refuse to explain this, in fact i refuse to even look at it anymore
-		for tile in self.drawntile_list:
-			x = tile.x
-			y = tile.y
-			if gamemap[x+1][y].special and gamemap[x][y+1].special:
-				if gamemap[x+1][y] not in self.drawntile_list and gamemap[x][y+1] not in self.drawntile_list:
-					if gamemap[x+1][y].special.name in ['glyph', 'drawing'] and gamemap[x][y+1].special.name in ['glyph', 'drawing']:
-						if gamemap[x+1][y+1] in self.drawntile_list:
-							if gamemap[x+1][y].get_drawing() == gamemap[x][y+1].get_drawing():
-								self.merge(gamemap[x][y+1].get_drawing())
-								return
-
-			if gamemap[x-1][y].special and gamemap[x][y+1].special:
-				if gamemap[x-1][y] not in self.drawntile_list and gamemap[x][y+1] not in self.drawntile_list:
-					if gamemap[x-1][y].special.name in ['glyph', 'drawing'] and gamemap[x][y+1].special.name in ['glyph', 'drawing']:
-						if gamemap[x-1][y+1] in self.drawntile_list:
-							if gamemap[x-1][y].get_drawing() == gamemap[x][y+1].get_drawing():
-								self.merge(gamemap[x][y+1].get_drawing())
-								return
-
-
-	def evoke(self):
-		self.diagonal_exception()
-
-		self.drawntile_list = list(set(self.drawntile_list)) #glyphs were duplicating if they were placed in junctions of merged drawings for some reason, this fixes it
-		power = 10
-		glyphs = self.get_glyphs()
-		affected = self.get_affected()
-		shape = self.determine_shape()
-
-		if shape == 'focus cross':
-			if len(self.drawntile_list) % 4 == 0: size = len(self.drawntile_list)/4
-			else:size = (len(self.drawntile_list)-1)/4
-			power += 7*size
-
-		elif shape == 'enclosed': power += 7
-		power += rtree.level*2
-
-		for glyph in glyphs:
-			if glyph.special.char == 264:
-				for dude in affected:
-					if dude.fighter: dude.fighter.take_damage(int(round(power*1.5)))
-					message("The " + dude.name + " is blasted by a wave of energy!")
-			if glyph.special.char == 265:
-				for dude in affected:
-					dude.fighter.receive_status('DoT', 7, power = power)
-					message('The '+ dude.name + "'s flesh starts to decay!")
-			if glyph.special.char == 266:
-				for dude in affected:
-					dude.fighter.receive_status('slow', int(round(float(power)/2)), power = power)
-					message('The '+ dude.name + "'s movements become dull!")
-
-		for tile in self.drawntile_list:
-			tile.special.char = ','
-
-		self.spent = True
-		drawdir.drawinglist.remove(self)
-
-	def get_affected(self):
-		shape = self.determine_shape()
-
-		affected = []
-		if shape in ['aoe cross', 'focus cross']: center = self.get_center()
-
-		if shape == 'focus cross' and center == None:
-			for tile in self.drawntile_list:
-				if gamemap[tile.x+1][tile.y] in self.drawntile_list and gamemap[tile.x][tile.y+1] in self.drawntile_list:
-					center = tile # not really center, this is some fuckery that had to be solved with X crosses involving even numbers
-					break  #but i dont feel like explaining it all so whatever
-
-			for obj in objects:
-				if obj.fighter and (obj.x, obj.y) in [(center.x, center.y),(center.x+1, center.y),(center.x, center.y+1),(center.x+1, center.y+1)]:
-					affected.append(obj)
-
-
-		elif shape == 'focus cross':
-			for obj in objects:
-					if obj.fighter and obj.distance_to(center) < 2: 
-						affected.append(obj)
-
-		elif shape == 'aoe cross':
-			size = (len(self.drawntile_list) - 1)/4 #size is the length of each "arm" on the cross
-			for obj in objects:
-				if obj.fighter and obj.distance_to(center) <= size + 1: 
-					affected.append(obj)
-
-		elif shape == 'linear':
-			affected_coords = [(tile.x, tile.y) for tile in self.drawntile_list]
-			for obj in objects:
-				if obj.fighter and (obj.x, obj.y) in affected_coords:
-					affected.append(obj)
-
-		elif shape == 'enclosed':
-			enclosed_coords = enclosed_space_processing(self.drawntile_list)
-			line_coords = [(tile.x, tile.y) for tile in self.drawntile_list]
-			for obj in objects:
-				if obj.fighter and ((obj.x, obj.y) in enclosed_coords or (obj.x, obj.y) in line_coords):
-					affected.append(obj)
-
-		return affected
-
-	def get_center(self):
-		center = None
-
-		for tile in self.drawntile_list:
-			x, y = tile.x, tile.y
-			if tile.special.char == 197:
-				if (gamemap[x+1][y] in self.drawntile_list) and (gamemap[x-1][y] in self.drawntile_list) and (gamemap[x][y+1] in self.drawntile_list) and (gamemap[x][y-1] in self.drawntile_list): # plus-shaped central tile
-					center = tile
-					break
-			elif tile.special.char == 190:
-				if gamemap[x+1][y+1] in self.drawntile_list and gamemap[x+1][y-1] in self.drawntile_list and gamemap[x-1][y+1] in self.drawntile_list and gamemap[x-1][y-1] in self.drawntile_list: # 'X shaped central tile'
-					center = tile
-					break
-
-		return center
-
-	def focus_cross_test(self):
-		all_x = map(lambda tile: tile.x, self.drawntile_list)
-		all_y = map(lambda tile: tile.y, self.drawntile_list)
-		w = max(all_x) - min(all_x)
-		h = max(all_y) - min(all_y)
-		boundingbox = Rect(min(all_x), min(all_y), w, h)
-		diag1 = [gamemap[boundingbox.x1+i][boundingbox.y1+i] for i in range(w+1)]
-		diag2 = [gamemap[boundingbox.x2-i][boundingbox.y1+i] for i in range(w+1)]
-		selfdiag1 = []
-		selfdiag2 = []
-		for tile in diag1:
-			if tile in self.drawntile_list:
-				selfdiag1.append(tile)
-			else: return False
-		for tile in diag2:
-			if tile in self.drawntile_list:
-				selfdiag2.append(tile)
-			else: return False
-
-		full_crosstiles = selfdiag1 + selfdiag2
-		if set(full_crosstiles) == set(self.drawntile_list):
-			return True
-		else: return False
-
-
-
-
-
-
-	def determine_shape(self): #what an ugly piece of code
-		width, height = self.get_dimensions()
-		aoe_cross = True
-		focus_cross = True
-		diamond = True
-		nonglyphs = filter(lambda x: x.special.name == 'drawing', self.drawntile_list)
-		charlist = map(lambda x: x.special.char, nonglyphs)
-		if width == height: #only for this type of ritual drawing
-
-			for char in charlist: #first, filter by size and characters
-				if char not in [15, 196, 197, 179]:
-					aoe_cross = False
-				if char not in [15, 188, 189, 190]:
-					focus_cross = False
-				if char not in [15, 209, 210, 211, 212, 190, 188, 189]:
-					diamond = False
-
-			center_tile = self.get_center()
-			if center_tile is None:
-				aoe_cross = False
-			elif center_tile.special.char == 188:
-				aoe_cross = False
-				diamond = False
-			elif center_tile.special.char == 197:
-				focus_cross = False
-				diamond = False
-
-		 	#check for symmetry
-			all_x = map(lambda tile: tile.x, self.drawntile_list)
-			all_y = map(lambda tile: tile.y, self.drawntile_list)
-			center_coord = Point(min(all_x)+float(width)/2, min(all_y) + float(height)/2)
-			left_of_center = filter(lambda tile: tile.x < center_coord.x, self.drawntile_list)
-			right_of_center = filter(lambda tile: tile.x > center_coord.x, self.drawntile_list)
-			above_center = filter(lambda tile: tile.y < center_coord.y, self.drawntile_list)
-			below_center = filter(lambda tile: tile.y > center_coord.y, self.drawntile_list)
-
-			if not len(left_of_center) == len(right_of_center) == len(above_center) == len(below_center):
-				aoe_cross = False
-				focus_cross = False
-				diamond = False
-
-			if self.focus_cross_test(): #the it's done inside that method is much better than this filtering-down crap, perhaps i'll refactor it all into the same format later
-				aoe_cross = False #in focus_cross_test i get the bounding box and draw out what would be the correct figure, then compare the two sets of tiles
-				focus_cross = True
-				diamond = False
-
-
-		else: 
-			aoe_cross = False
-			focus_cross = False
-			diamond = False
-
-
-		if aoe_cross == True and focus_cross == False and diamond == False: return 'aoe cross'
-		elif aoe_cross == False and focus_cross == False and diamond == True: return 'diamond'
-		elif aoe_cross == False and focus_cross == True and diamond == False: return 'focus cross'
-
-		enclosed_coords = enclosed_space_processing(self.drawntile_list)
-		if not enclosed_coords: return 'linear'
-		else: return 'enclosed' 
-		
-
-			
-	def merge(self, inactive_drawing):
-		global drawdir
-
-		duplicates_removed = filter(lambda x: x not in self.drawntile_list, inactive_drawing.drawntile_list)
-		self.drawntile_list += duplicates_removed
-		drawdir.drawinglist.remove(inactive_drawing)
-
-	def get_dimensions(self):
-		xcoords = map(lambda tile: tile.x, self.drawntile_list)
-		ycoords = map(lambda tile: tile.y, self.drawntile_list)
-		height = (max(ycoords) - min(ycoords)) + 1
-		width = (max(xcoords) - min(xcoords)) + 1
-
-		return width, height
-
-
-		
-class Point:
-	def __init__(self, x, y):
-		self.x = x
-		self.y = y
 
 class SkillTree:#DO NOT NEED TO BE GLOBAL. I can have them easily belong to the Player obj
 #to change later
@@ -748,9 +503,9 @@ class Item:
 			return True
 
 	def use(self):
-		if self.use_function == None:
+		if not self.use_function:
 			message('The ' + self.owner.name + ' cannot be used.')
-		if self.itemtype == "chalk":
+		elif self.itemtype == "chalk":
 			self.use_function(self)
 		elif self.use_function() != 'cancelled' and self.itemtype != 'equipment':  #conditions for persistent/charge-based consumables go here
 			self.stack -= 1
@@ -1051,10 +806,9 @@ class DumbMonster:  # basic AI
 				
 	def determine_cost(self):
 		cost = 100
-		if self.owner is not player:
-			for stati in self.owner.fighter.status:
-				if stati.name == 'maim' and self.action == 'move': cost += 50
-				if stati.name == 'slow': cost += int(round(stati.power*1.25))
+		for stati in self.owner.fighter.status:
+			if stati.name == 'maim' and self.action == 'move': cost += 50
+			if stati.name == 'slow': cost += int(round(stati.power*1.25))
 		return cost
 
 
@@ -1077,22 +831,7 @@ class DumbMonster:  # basic AI
 
 
 
-class Rect:
-	def __init__(self, x, y, w, h):
-		self.x1 = x
-		self.y1 = y
-		self.x2 = x+w
-		self.y2 = y+h
 
-
-	def center(self):
-		center_x = (self.x1+self.x2)/2
-		center_y = (self.y1+self.y2)/2
-		return (center_x,center_y)
-
-	def intersect(self,other):
-		return (self.x1 <= other.x2 and self.x2 >= other.x1 and self.y1 <= self.y2 and self.y2 >= other.y1)
-		#check if rectangle intersects with another one
 
 class Camera(object):
 	def __init__(self, w = CAMERA_WIDTH, h = CAMERA_HEIGHT, x=0, y=0):
@@ -1288,7 +1027,7 @@ class GameObj(object):
 					if get_equipped_in_slot('main hand').equiptype == 'polearm' and distance_between(Point(player.x, player.y), Point(x, y)) < 2 and not isinstance(self, Player):
 						chance = get_enchant_value(get_equipped_in_slot('main hand'), 'polearm defense')
 						if libtcod.random_get_float(0, 0, 1) < chance:
-							message('You fend the ' + self.name + ' off with your weapon.')
+							message('You fend the ' + self.name + ' off with your polearm.')
 							return #add agility, strength components here later
 
 					if get_equipped_in_slot('main hand').equiptype == 'staff' and get_status_from_name(player, 'spear staff stance') and distance_between(Point(player.x, player.y), Point(x, y)) < 2 and not isinstance(self, Player):
@@ -1319,9 +1058,6 @@ class GameObj(object):
 
 		if gamemap[self.x][self.y].special and gamemap[self.x][self.y].special.onwalk_effect:
 			gamemap[self.x][self.y].special.apply_onwalk(self)
-
-
-
 
 	def in_camera(self):
 		if camera.x <= self.x <= camera.x2 and camera.y <= self.y <= camera.y2: return True
@@ -1502,7 +1238,7 @@ class Player(GameObj):#player is inherited because it's easier since it has one 
 
 
 			director.update(action = 'start drawing')
-			drawing = RitualDraw(self.x, self.y)
+			drawing = RitualDraw(self.x, self.y, player, gamemap, objects, drawdir)
 			drawdir.drawinglist.append(drawing)
 			if player.rtree.level >=1 : message("You start chanting and drawing the runes of mystery...", libtcod.dark_violet)
 			else: message("You start scribbling on the floor.")
@@ -1533,7 +1269,7 @@ class Player(GameObj):#player is inherited because it's easier since it has one 
 
 	def abl_staff_stance(self):
 		choices = ['Hammer stance', 'Spear stance', 'Parry stance']
-		index = menu('Choose a staff stance.', choices, 50)
+		index = menu('Choose a staff stance.', choices, 20)
 		if index is not None:
 			for statusname in ['hammer staff stance', 'parry staff stance', 'spear staff stance']:
 				status = get_status_from_name(player, statusname)
@@ -1667,11 +1403,7 @@ def tree_lvlup():
 
 
 
-def normal_randomize(mean,sd): #input mean, sd for gauss distribution
 
-	floatnormal = gauss(float(mean),float(sd)) #output one sample, rounded and non-negative
-	if floatnormal <= 1: return 1
-	return int(round(floatnormal))
 
 def main_menu():
 	global con
@@ -2689,7 +2421,7 @@ def new_game():
 
 	game_state = 'playing'
 
-	item = generate_item('heavy broomstick', 0, 0)
+	item = generate_item('sharpened stick', 0, 0)
 	player.inventory.append(item)
 
 
@@ -2801,10 +2533,7 @@ def drawing_function(self):
 			drawing.add_drawntile(gamemap[x][y])
 
 
-def distance_between(p1, p2): #p1 p2 tuples
-	dx = p1.x - p2.x
-	dy = p1.y - p2.y
-	return math.sqrt(dx**2 + dy**2)
+
 
 def determine_orientation(dxl, dyl):
 	orient = ''
@@ -2831,9 +2560,10 @@ def determine_orientation(dxl, dyl):
 
 def get_enchant_value(equipment, enchantname):
 	enchant = [filter(lambda x: x.name == enchantname, equipment.special.enchantlist)]
-	enchant = enchant[0][0]
-	enchant = enchant.value
-	return enchant
+	print enchant
+	while isinstance(enchant, list):
+		enchant = enchant[0]
+	return enchant.value
 
 
 def determine_drawchar(prevchar):

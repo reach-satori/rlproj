@@ -257,7 +257,7 @@ def get_native_enchants(eqspecial): #must return list of EnchantModule objects
 	elif eqname == 'baseball bat':
 		nativelist.append(EnchantModule(eqspecial, 'str bonus', 0.4, True))
 		nativelist.append(EnchantModule(eqspecial, 'stun chance', 0.1, True, duration = 1))
-	elif eqname == 'sharpened broomstick':
+	elif eqname == 'sharpened stick':
 		nativelist.append(EnchantModule(eqspecial, 'polearm reach', 0.5, True))
 		nativelist.append(EnchantModule(eqspecial, 'polearm defense', 0.45, True))
 
@@ -340,6 +340,7 @@ def get_item_description(item):
 		if item.identified: description += [
 		'',
 		'Damage roll: ' + str(item.base_dmg[0]) + '-' + str(item.base_dmg[1]),
+		"Special: This item has a chance to maim on hit, severely impairing the target's movement.",
 		'Strength bonus: ' + str(item.special.on_atk_bonus['str bonus']*100) + '%%',
 		'Weight: ' + str(item.weight)
 		]
@@ -386,6 +387,20 @@ def get_item_description(item):
 		'Damage roll: ' + str(item.base_dmg[0]) + '-' + str(item.base_dmg[1]),
 		"Special: This item can attack at a 2 tile range, although it suffers a penalty attacking from normal melee range.",
 		"Special: Enemies must pass a check to approach you when you're wielding this weapon.",
+		'Weight: ' + str(item.weight)
+		]
+
+	elif item.owner.name == 'heavy broomstick':
+		description = [
+					'Heavy broomstick',
+					"Repurposed heavy-duty cleaning implement, found in any supply closet.",
+					"What weapon more basic and classic could there be than a big, heavy stick?",
+					"Although the weapon itself is basic, staves like it can be used in a variety of ways.",
+					]
+		if item.identified: description += [
+		'',
+		'Damage roll: ' + str(item.base_dmg[0]) + '-' + str(item.base_dmg[1]),
+		"Special: This item can be used with 3 stances. Use it from the (e)quipment menu to switch stances.",
 		'Weight: ' + str(item.weight)
 		]
 

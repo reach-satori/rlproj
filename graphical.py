@@ -44,6 +44,56 @@ class FloatingText(EffectCon):
 
 		self.duration -= 1
 
+class PlainAreaEffect(EffectCon):
+	def __init__(self, tilelist, fadetime, color1, color2):
+		self.tilelist = tilelist
+		self.color1 = color1
+		self.color2 = color2
+		allx = map(lambda tile: tile.x, self.tilelist)
+		ally = map(lambda tile: tile.y, self.tilelist)
+		minx = min(allx)
+		maxx = max(allx)
+		miny = min(ally)
+		maxy = max(ally)
+		self.blitx = minx
+		self.blity = miny
+		width = maxx - minx + 1
+		height = maxy - miny + 1
+		EffectCon.__init__(self, width, height, fadetime)
+
+		libtcod.console_set_key_color(self.console, libtcod.silver)
+		libtcod.console_set_default_background(self.console, libtcod.silver)#key color
+
+		idx = [0, self.maxduration]
+		col = [self.color1, self.color2]
+		self.colormap = libtcod.color_gen_map(col, idx)
+
+
+
+		newcoordlist = []
+		for tile in self.tilelist:
+			newcoordlist.append((tile.x - minx, tile.y - miny))
+		self.con_coords = newcoordlist
+
+		activeeffects.append(self)
+
+
+	def draw(self):
+		
+		for x in range(self.width+1):
+			for y in range(self.height+1):
+				if (x, y) in self.con_coords:
+					libtcod.console_set_char_background(self.console, x, y, self.colormap[self.maxduration - self.duration], flag=libtcod.BKGND_SET)
+				else:
+					libtcod.console_set_char_background(self.console, x, y, libtcod.silver, flag=libtcod.BKGND_SET)
+		libtcod.console_blit(self.console, 0, 0, 0, 0, 0, self.blitx, self.blity, 0, 0.5)
+		self.duration -= 1
+
+
+
+
+
+
 class LineHandler(EffectCon):
 	def __init__(self, origin, end, color, char= '', sleep = 50, duration = 0):#origin and end must be GameObj, otherwise have camx, camy attributes
 	# duration 0 means 1 frame draw
@@ -106,7 +156,7 @@ def render_effects():
 		if effect.duration == 0: 
 			activeeffects.remove(effect)
 			# libtcod.console_delete(effect.console)
-		effect.draw()
+		else: effect.draw()
 
 def console_from_twopts(origin, end):
 	width = abs(max(origin.x, end.x) - min(origin.x, end.x)) + 1
