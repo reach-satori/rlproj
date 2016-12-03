@@ -199,7 +199,7 @@ def get_nodetable(treename): #only happens in initialization of skill tree (ctre
 		]
 	elif treename == 'tech':
 		nodetable = [
-		SkillNode(name = 'basic training', tier = 1, leveled = False, abilities = [], description = get_node_description('basic engineering'), parent = [])
+		SkillNode(name = 'basic engineering', tier = 1, leveled = False, abilities = [], description = get_node_description('basic engineering'), parent = [])
 		]
 
 	elif treename == 'ritual':
@@ -258,8 +258,8 @@ def get_native_enchants(eqspecial): #must return list of EnchantModule objects
 		nativelist.append(EnchantModule(eqspecial, 'str bonus', 0.4, True))
 		nativelist.append(EnchantModule(eqspecial, 'stun chance', 0.1, True, duration = 1))
 	elif eqname == 'sharpened stick':
-		nativelist.append(EnchantModule(eqspecial, 'polearm reach', 0.5, True))
-		nativelist.append(EnchantModule(eqspecial, 'polearm defense', 0.45, True))
+		nativelist.append(EnchantModule(eqspecial, 'polearm reach', 0.3, True))
+		nativelist.append(EnchantModule(eqspecial, 'polearm defense', 0.25, True))
 
 	return nativelist
 
@@ -279,7 +279,7 @@ def ccreation_stats(choice):
 	if choice == 'empty':
 		stats = [' ']
 	elif choice == 'human':
-		stats = ['this is the human statblock', 'it comes as strings in a list','because i dont know how to format it nicely using onlylibtcod','have you seen this console shit', 'seriously, this is bullshit']
+		stats = ['this is the human statblock', 'it comes as strings in a list']
 	elif choice == 'warden':
 		stats = ['more to combat','more to strength', 'more to constitution', 'decent starting weapons']
 	elif choice == 'anime catgirl':
@@ -395,7 +395,7 @@ def get_item_description(item):
 					'Heavy broomstick',
 					"Repurposed heavy-duty cleaning implement, found in any supply closet.",
 					"What weapon more basic and classic could there be than a big, heavy stick?",
-					"Although the weapon itself is basic, staves like it can be used in a variety of ways.",
+					"Although the weapon itself is primitive, staves like it can be used in a variety of ways.",
 					]
 		if item.identified: description += [
 		'',

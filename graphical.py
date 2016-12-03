@@ -1,6 +1,7 @@
 from math import pi, acos, hypot, ceil, sqrt
 import libtcodpy as libtcod
 
+
 activeeffects = []
 
 class Point:

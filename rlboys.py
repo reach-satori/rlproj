@@ -2,8 +2,6 @@
 #i am not responsible
 
 
-
-
 import libtcodpy as libtcod
 import math
 import textwrap
@@ -11,12 +9,14 @@ import shelve
 from random import gauss, uniform
 from collections import deque
 from ritualdraw import RitualDraw
+from render import *
 
 #===============#
 import catalog
 import graphical
 from utility import *
-
+from sett import *
+from messages import *
 #TODO: big todos:
 #TODO: Graphical effects(floating text, floating numbers maybe, blood, buff effects)##floating text done
 #TODO: map generation
@@ -26,56 +26,6 @@ from utility import *
 #TODO: fill out skill, perk trees
 #TODO: subskill system***?
 #TODO: separate combat abilities
-#window size
-SCREEN_WIDTH = 120
-SCREEN_HEIGHT = 60
-
-
-#map size
-MAP_WIDTH = 80
-MAP_HEIGHT = 50
-
-CAMERA_WIDTH = 80
-CAMERA_HEIGHT = 50
-FREEMOVE_WIDTH = 15
-FREEMOVE_HEIGHT = 10
-
-#GUI parameters
-BAR_WIDTH = 20
-PANEL_HEIGHT = 10
-PANEL_Y = SCREEN_HEIGHT - PANEL_HEIGHT
-MSG_X = BAR_WIDTH + 2
-MSG_WIDTH = SCREEN_WIDTH - BAR_WIDTH - 2
-MSG_HEIGHT = PANEL_HEIGHT - 1
-
-#map gen parameters
-MAX_ROOM_MONSTERS = 3
-ROOM_MAX_SIZE = 25  # ALL TO BE CHANGED LATER OF COURSE
-ROOM_MIN_SIZE = 6
-MAX_ROOMS = 30
- 
-LIMIT_FPS = 20  #20 frames-per-second maximum
-FOV_ALGO = 0  #default FOV algorithm
-FOV_LIGHT_WALLS = True
-TORCH_RADIUS = 10
-INVENTORY_WIDTH = SCREEN_WIDTH - 10
-CHARACTER_SCREEN_WIDTH = 40
-
-LIGHTNING_DAMAGE = 20 
-LIGHTNING_RANGE = 5
-FIREBALL_DAMAGE = 12
-FIREBALL_RADIUS = 4
-POTHEAL_AMOUNT = 10
-
-LEVEL_UP_BASE = 50
-LEVEL_UP_FACTOR = 75
-LEVEL_SCREEN_WIDTH = 40
-
-
-color_dark_wall = libtcod.Color(0, 0, 100)
-color_dark_ground = libtcod.Color(50, 50, 150)
-color_light_wall = libtcod.Color(130, 110, 50)
-color_light_ground = libtcod.Color(200, 180, 50)
 
 class PlayerStats(object):
 	def __init__(self, stats):
@@ -109,7 +59,6 @@ class PlayerActionReport(object): #singleton, director
 		self.action = action
 		self.action_extra = action_extra   #
 		self.takes_turn = takes_turn       #
-#ACTIONS: move, attack, start drawing, stop drawing, drop item, equip item, use item
 
 		self.x1 = x1                       #This object reports on the last action taken by the player, as well as keeping a record of the last however many actions in a list(number decided in add_to_recorder),
 		self.y1 = y1                       #Remember to add a director update call to every player action
@@ -390,13 +339,13 @@ class Equipment:
 		#equip object and show a message about it
 		if equipper == 'player':
 			if self.twohand and get_equipped_in_slot('off hand'): 
-				message("The " + self.owner.name + ' requires both hands to use.')
+				message("The " + self.owner.name + ' requires both hands to use.', game_msgs)
 				return
 				
 			if get_equipped_in_slot(self.slot):
 				get_equipped_in_slot(self.slot).unequip()
 			self.is_equipped = True
-			message('Equipped ' + self.owner.item.dname + ' on your ' + self.slot + '.', libtcod.light_green)
+			message('Equipped ' + self.owner.item.dname + ' on your ' + self.slot + '.', libtcod.light_green, game_msgs)
 			director.update(action = 'equip item', object_s = self.owner)
 
 
@@ -408,7 +357,7 @@ class Equipment:
 			for statusname in ['parry staff stance', 'hammer staff stance', 'spear staff stance']:
 				status = get_status_from_name(player, statusname)
 				if status: status.terminate()
-		message('Unequipped ' + self.owner.item.dname + ' from ' + self.slot + '.', libtcod.light_yellow)
+		message('Unequipped ' + self.owner.item.dname + ' from ' + self.slot + '.', libtcod.light_yellow, game_msgs)
 		director.update(action = 'unequip item', object_s = self.owner)
 
 	def equip_options(self): #upon getting chosen from the equipment menu
@@ -451,11 +400,11 @@ class Equipment:
 				elif enchant.name == 'maim chance':
 					if libtcod.random_get_float(0,0,1) <= enchant.value:
 						target.fighter.receive_status('maim', enchant.duration)
-						message('Your attack maims the enemy!', libtcod.light_blue)
+						message('Your attack maims the enemy!', libtcod.light_blue, game_msgs)
 				elif enchant.name == 'stun chance':
 					if libtcod.random_get_float(0,0,1) <= enchant.value:
 						target.fighter.receive_status('stun', enchant.duration)
-						message('Your attack stuns the enemy!', libtcod.light_blue)
+						message('Your attack stuns the enemy!', libtcod.light_blue, game_msgs)
 
 		if self.equiptype == 'staff' and get_status_from_name(player, 'hammer staff stance'):
 			bonusdmg.add(origin.stats['strength'] * 0.5)
@@ -485,26 +434,26 @@ class Item:
 			invitem = invitem[0]
 			invitem.item.stack += self.stack # same thing as normal pickup but just increments to stack
 			objects.remove(self.owner)
-			message('You picked up ' + self.dname + '!', libtcod.green)
+			message('You picked up ' + self.dname + '!', libtcod.green, game_msgs)
 			director.update(action = 'pick up item', object_s = self.owner)
 
 		elif len(player.inventory)>=26:
-			message('Your inventory is full')
+			message('Your inventory is full', libtcod.white, game_msgs)
 			return False
 		elif sum([item.item.weight for item in player.inventory]) > player.max_weight:
-			message("You're carrying too much already!")
+			message("You're carrying too much already!", libtcod.white, game_msgs)
 			return False
 
 		else:
 			player.inventory.append(self.owner)  # inventory has objects, not item
 			objects.remove(self.owner)
-			message('You picked up ' + self.dname + '!', libtcod.green)
+			message('You picked up ' + self.dname + '!', libtcod.green, game_msgs)
 			director.update(action = 'pick up item', object_s = self.owner)
 			return True
 
 	def use(self):
 		if not self.use_function:
-			message('The ' + self.owner.name + ' cannot be used.')
+			message('The ' + self.owner.name + ' cannot be used.', libtcod.white, game_msgs)
 		elif self.itemtype == "chalk":
 			self.use_function(self)
 		elif self.use_function() != 'cancelled' and self.itemtype != 'equipment':  #conditions for persistent/charge-based consumables go here
@@ -519,7 +468,7 @@ class Item:
 		if self.owner.equipment and self.owner.equipment.is_equipped: self.owner.equipment.unequip()
 		self.owner.x = player.x
 		self.owner.y = player.y
-		message('You dropped a ' + self.dname + '.', libtcod.yellow)
+		message('You dropped a ' + self.dname + '.', libtcod.yellow, game_msgs)
 		director.update(action = 'drop item', object_s = self.owner)
 
 	def examine(self):
@@ -612,14 +561,14 @@ class StatusEffect(object): #TODO: STACKING BEHAVIOUR FOR STATUS EFFECTS
 				drawing_function(self)
 				self.pen.stack -= 1
 			else: 
-				message('You ran out of ' + self.pen.owner.name, libtcod.light_red +'.')
+				message('You ran out of ' + self.pen.owner.name, libtcod.light_red +'.', game_msgs)
 				player.inventory.remove(self.pen.owner)
 				self.terminate()
 		elif self.name == 'DoT':
 			self.affected.take_damage(round(self.power*0.4))
 		elif self.name == 'stun':
 			self.affected.energy = 0
-			message('The '+ self.affected.owner.name + ' is too stunned to act.', libtcod.light_blue)
+			message('The '+ self.affected.owner.name + ' is too stunned to act.', libtcod.light_blue, game_msgs)
 		elif self.name == 'sprint':
 			if isinstance(self.affected.owner, Player):
 				if director.action == 'move':
@@ -632,14 +581,11 @@ class StatusEffect(object): #TODO: STACKING BEHAVIOUR FOR STATUS EFFECTS
 
 	def endfunction(self):
 		if self.name == 'sprint':
-			message("You stop sprinting. You're exhausted, slowing you down.")
+			message("You stop sprinting. You're exhausted, slowing you down.", libtcod.light_red, game_msgs)
 			self.affected.receive_status('sprint exhaustion', 20)
 
 		if self.name == 'sprint exhaustion':
-			message("You're no longer exhausted. You can sprint again.")
-
-class GraphicalStatus(StatusEffect): #used to distinguish which status get resolved at frame-speed and which at turn-speed
-	pass #one goes in play_game, the other in render_all -- maybe they will have some more differences eventually
+			message("You're no longer exhausted. You can sprint again.", libtcod.green, game_msgs)
 
 class Fighter:
 	def __init__(self, hp, armor, power, xp,  death_function = None, depth_level = 1, speed = 100):
@@ -701,7 +647,7 @@ class Fighter:
 
 				if finaldmg < 0: finaldmg = 0
 
-				message('You attack the ' + target.name + ' for ' + str(int(round(finaldmg))) + ' hit points.')
+				message('You attack the ' + target.name + ' for ' + str(int(round(finaldmg))) + ' hit points.', libtcod.white, game_msgs)
 				target.fighter.take_damage(finaldmg)
 			director.update(action = 'attack', x2 = target.x, y2 = target.y)
 
@@ -709,11 +655,11 @@ class Fighter:
 			if libtcod.random_get_int(0, 1, 100) > int(round(target.dodge * 1.3)):
 				damage = self.power() - target.fighter.armor
 				if damage > 0:
-					message(self.owner.name.capitalize() + ' attacks ' + target.name + ' for ' + str(int(round(damage))) + ' hit points.')
+					message(self.owner.name.capitalize() + ' attacks ' + target.name + ' for ' + str(int(round(damage))) + ' hit points.', libtcod.white, game_msgs)
 					target.fighter.take_damage(damage)
 				else:
-					message(self.owner.name.capitalize() + ' attacks ' + target.name + ' but it has no effect!')
-			else: message(self.owner.name.capitalize() + ' misses ' + target.name + ' completely!', libtcod.lightest_green)
+					message(self.owner.name.capitalize() + ' attacks ' + target.name + ' but it has no effect!', libtcod.white, game_msgs)
+			else: message(self.owner.name.capitalize() + ' misses ' + target.name + ' completely!', libtcod.lightest_green, game_msgs)
 
 
 	def heal(self, amount):
@@ -830,106 +776,6 @@ class DumbMonster:  # basic AI
 
 
 
-
-
-
-class Camera(object):
-	def __init__(self, w = CAMERA_WIDTH, h = CAMERA_HEIGHT, x=0, y=0):
-		self.width = w
-		self.height = h
-		self.x = x
-		self.y = y
-
-	def reset_position(self, coord = 'both'):
-
-		if coord == 'xreset' or coord == 'both': self.x = player.x - self.width/2 # less than 0 type errors get dont happen because of setter properties
-		if coord == 'yreset' or coord == 'both': self.y = player.y - self.height/2 # centers camera on player
-		libtcod.console_clear(con)
-
-
-
-	def check_for_posreset(self, xdiff = FREEMOVE_WIDTH, ydiff = FREEMOVE_HEIGHT):
-		centerx, centery = self.center
-		if (player.x > centerx + xdiff or player.x < centerx - xdiff) and (player.y > centery + ydiff or player.y < centery - ydiff): #the ugliest code
-			return 'both'
-
-		if player.x > centerx + xdiff: return 'xreset'  
-		elif player.x < centerx - xdiff: return 'xreset'
-#                                                       
-		if player.y > centery + ydiff: return 'yreset'  
-		elif player.y < centery - ydiff: return 'yreset'
-														
-
-		return False
-
-	def camera_render(self):
-		if self.check_for_posreset(): self.reset_position(self.check_for_posreset())
-
-		for camy in range(self.height):
-			mapy = self.y + camy
-			for camx in range(self.width):
-				mapx = self.x + camx
-
-				visible = libtcod.map_is_in_fov(fov_map, mapx, mapy)
-				wall = gamemap[mapx][mapy].block_sight
-				special = gamemap[mapx][mapy].special
-				if not visible:
-					if gamemap[mapx][mapy].explored:
-						if wall:
-							libtcod.console_put_char_ex(con, camx, camy, '#', color_dark_wall, libtcod.black)           #
-						else:                                                                                     #
-							libtcod.console_put_char_ex(con, camx, camy, '.', color_dark_ground, libtcod.black)         # OK this looks bad but it's quite simple actually, i'm sure it could be written more elegantly with abs or something
-						if special and wall:                                                                      # basically there are 3 nested rectangles: the biggest beingthe actual map where objects interact and the game happens, the second is the camera, which gets rendered to con in camera_render method
-							libtcod.console_put_char_ex(con, camx, camy, special.char, color_dark_wall, libtcod.black)  # the third is a phantom FREEMOVE square which is checked in check_for_posreset and all it does is center the camera position (separately for x and y) when the player walks outside of it
-						elif special and not wall:                                                                 #most of the complexity is just in juggling coordinates between camera and map, but it more or less comes down to : 
-							libtcod.console_put_char_ex(con, camx, camy, special.char, color_dark_ground, libtcod.black) #mapcoord = camera_origin_coord + current_camera_coord: that's those mapx and mapy variables. works like poschengband camera
-				else: #it's visible
-					if wall:
-						libtcod.console_put_char_ex(con, camx, camy, '#', color_light_wall, libtcod.black)
-					else:
-						libtcod.console_put_char_ex(con, camx, camy, '.', color_light_ground, libtcod.black)
-					if special:
-						libtcod.console_put_char_ex(con, camx, camy, special.char, special.foreground, special.background)
-					gamemap[mapx][mapy].explored = True
-
-
-	@property
-	def center(self):
-		centerx = self.x + self.width/2
-		centery = self.y + self.height/2
-		return centerx, centery
-
-	@property
-	def x2(self):
-		return self.x + self.width
-
-	@property
-	def y2(self):
-		return self.y + self.height
-	
-	
-
-	@property
-	def x(self):
-		return self._x
-
-	@property
-	def y(self):
-		return self._y
-	
-	@x.setter
-	def x(self, value):
-		if value < 0: value = 0
-		if value > MAP_WIDTH - self.width: value = MAP_WIDTH - self.width
-		self._x = value
-
-	@y.setter
-	def y(self, value):
-		if value < 0: value = 0
-		if value > MAP_HEIGHT - self.height: value = MAP_HEIGHT - self.height
-		self._y = value
-
-
 class SpTile:
 	def __init__(self, name, char = None, foreground = None, background = None, onwalk_effect = None):
 		self.name = name# 
@@ -1027,12 +873,12 @@ class GameObj(object):
 					if get_equipped_in_slot('main hand').equiptype == 'polearm' and distance_between(Point(player.x, player.y), Point(x, y)) < 2 and not isinstance(self, Player):
 						chance = get_enchant_value(get_equipped_in_slot('main hand'), 'polearm defense')
 						if libtcod.random_get_float(0, 0, 1) < chance:
-							message('You fend the ' + self.name + ' off with your polearm.')
+							message('You fend the ' + self.name + ' off with your polearm.', libtcod.green, game_msgs)
 							return #add agility, strength components here later
 
 					if get_equipped_in_slot('main hand').equiptype == 'staff' and get_status_from_name(player, 'spear staff stance') and distance_between(Point(player.x, player.y), Point(x, y)) < 2 and not isinstance(self, Player):
 						if libtcod.random_get_float(0, 0, 1) < 0.4:
-							message('You fend the ' + self.name + ' off with your staff.')
+							message('You fend the ' + self.name + ' off with your staff.', libtcod.green, game_msgs)
 							return
 
 				#Set self's coordinates to the next path tile
@@ -1200,26 +1046,26 @@ class Player(GameObj):#player is inherited because it's easier since it has one 
 	def abl_kicklaunch(self): #return true if went through, false if its cancelled
 		target = random_adj_target()
 		if target == None:
-			message('Nobody to kick!')
+			message('Nobody to kick!', libtcod.white, game_msgs)
 			return False
 			
 		dx, dy = graphical.get_increments(self, target)
 		dmg = self.fighter.power(multipliers = [0.5])
 		dmg = dmg.resolve()
 		target.fighter.take_damage(dmg)
-		message('You put all your strength behind a mighty kick, dealing ' + str(int(round(dmg))) + ' damage.', libtcod.light_green)
+		message('You put all your strength behind a mighty kick, dealing ' + str(int(round(dmg))) + ' damage.', libtcod.light_green, game_msgs)
 		
-		if push(self, target, 3) < 3: message('The ' + target.name + ' slams into something violently!', libtcod.light_green) 
+		if push(self, target, 3) < 3: message('The ' + target.name + ' slams into something violently!', libtcod.light_green, game_msgs) 
 		director.update(action = 'use ability', action_extra = 'kicklaunch', x2 = target.x, y2 = target.y)
 		return True
 # 		# ABILITY DISTANCE NUMBER
 	def abl_sprint(self):
 		statuslist = filter(lambda x: x.name in ['sprint', 'sprint exhaustion'], self.fighter.status)
 		if len(statuslist) == 0: 
-			message('You start sprinting.')
+			message('You start sprinting.', libtcod.green, game_msgs)
 			self.fighter.receive_status('sprint', 15)
-		elif statuslist[0] == 'sprint': message("You're already sprinting.") 
-		elif statuslist[0] == 'sprint exhaustion': message("You're exhausted.") 
+		elif statuslist[0] == 'sprint': message("You're already sprinting.", libtcod.white, game_msgs) 
+		elif statuslist[0] == 'sprint exhaustion': message("You're exhausted.", libtcod.red, game_msgs) 
 	def abl_fling_trinket(self, chosen_trinket = None):
 		if not chosen_trinket: chosen_trinket = inventory_menu('Choose a trinket to throw:', itemtype = 'trinket') #so you can arrive here through 't' throw or 'a' ability > fling trinket..... remember inventory_menu returns None if it's cancelled
 		if not chosen_trinket: return
@@ -1238,20 +1084,20 @@ class Player(GameObj):#player is inherited because it's easier since it has one 
 
 
 			director.update(action = 'start drawing')
-			drawing = RitualDraw(self.x, self.y, player, gamemap, objects, drawdir)
+			drawing = RitualDraw(self.x, self.y, player, gamemap, objects, drawdir, game_msgs)
 			drawdir.drawinglist.append(drawing)
-			if player.rtree.level >=1 : message("You start chanting and drawing the runes of mystery...", libtcod.dark_violet)
-			else: message("You start scribbling on the floor.")
+			if player.rtree.level >=1 : message("You start chanting and drawing the runes of mystery...", libtcod.dark_violet, game_msgs)
+			else: message("You start scribbling on the floor.", libtcod.white, game_msgs)
 
 		elif director.action == "start drawing":#activating and deactivating right away draws glyphs rather than lines, this block is cleaning up activation in this event
-			if player.rtree.level < 1: message("You don't know how to draw glyphs.", libtcod.light_red)
+			if player.rtree.level < 1: message("You don't know how to draw glyphs.", libtcod.light_red, game_msgs)
 			drawdir.drawinglist.remove(drawdir.active_drawing) #adding a glyph does not add a new drawing to drawdir, it just modifies one tile in the main body of another drawing
 			wanted_status = filter(lambda x: x.name == 'drawing', self.fighter.status) #little bit of copypasted code, but this way is more readable i think
 			wanted_status[0].terminate() #there can only be one drawing status online anyway - tying it to a single toggle key makes sure of it
 
 			playertile = gamemap[player.x][player.y] #just so it's easier to write and read - points to the tile the player is standing on
 			if (playertile.special and playertile.special.name not in ['drawing', 'glyph']) or not playertile.special:
-				message('You can only draw a glyph on top of ritual lines.', libtcod.light_red)
+				message('You can only draw a glyph on top of ritual lines.', libtcod.light_red,  game_msgs)
 				return 'didnt-take-turn'
 			else:
 				director.update(action = 'draw glyph')
@@ -1308,7 +1154,7 @@ class Player(GameObj):#player is inherited because it's easier since it has one 
 
 
 		if is_blocked(x, y): 
-			message("Can't move there.")
+			message("Can't move there.", libtcod.white, game_msgs)
 			return 'didnt-take-turn'
 		self.move(dx,dy)
 		fov_recompute = True
@@ -1467,7 +1313,7 @@ def play_game():
 
 	
 
-	render_all()
+	render_all(fov_map, fov_recompute, objects, game_msgs, player, camera, panel, con, dungeon_level) 
 	lovemessage = ['the game begins','some kind of lore goes here',"but for now its a placeholder","placeholder placeholder"]
 	textbox(lovemessage)
 
@@ -1484,7 +1330,7 @@ def play_game():
 		libtcod.sys_check_for_event(libtcod.EVENT_KEY_PRESS,key,mouse)
 		
 
-		render_all()			
+		render_all(fov_map, fov_recompute, objects, game_msgs, player, camera, panel, con, dungeon_level)			
 
 		player_action = handle_keys()
 
@@ -1494,8 +1340,7 @@ def play_game():
 			player.speed_process()
 			for object in objects:
 				if object.fighter and len(object.fighter.status) > 0:
-					for stati in object.fighter.status:
-						if not isinstance(stati, GraphicalStatus): stati.activate()
+					for stati in object.fighter.status: stati.activate()
 				if object.ai:
 					object.ai.take_turn()	
 
@@ -1509,7 +1354,7 @@ def check_lvlup():
 	if player.fighter.xp >= lvlup_xp:
 		player.lvl += 1
 		player.fighter.xp -= lvlup_xp
-		message('Your battle skills grow stronger! You reached level ' + str(player.lvl) + '!', libtcod.yellow)
+		message('Your battle skills grow stronger! You reached level ' + str(player.lvl) + '!', libtcod.yellow, game_msgs)
 
 		choice = None
 		while choice == None:  #keep asking until a choice is made
@@ -1552,7 +1397,7 @@ def get_all_equipped(obj):  #returns a list of equipped items
 def next_level():
 	global dungeon_level
 	dungeon_level += 1
-	message('You descend further into the bowels of the earth.', libtcod.dark_violet)
+	message('You descend further into the bowels of the earth.', libtcod.dark_violet, game_msgs)
 	make_map()
 	libtcod.console_clear(con)
 	drawdir.clear()
@@ -1648,15 +1493,15 @@ def handle_keys():
 
 		elif key_char == 'e' and key.shift:#(E)voke drawing:
 			if player.rtree.level < 1:
-				message("You don't know how to evoke.")
+				message("You don't know how to evoke.", libtcod.white, game_msgs)
 				return 'didnt-take-turn'
 
 			if drawdir.drawinglist == []:
-				message("There's nothing to evoke right now.")
+				message("There's nothing to evoke right now.", libtcod.white, game_msgs)
 				return 'didnt-take-turn'
 
 			if 'drawing' in [stati.name for stati in player.fighter.status]:
-				message("Can't evoke while still drawing.")
+				message("Can't evoke while still drawing.", libtcod.white, game_msgs)
 				return 'didnt-take-turn'
 
 			tx, ty = target_tile()
@@ -1667,7 +1512,7 @@ def handle_keys():
 				wanted_drawing = ttile.get_drawing()
 				wanted_drawing.evoke()
 			else:
-				message('Nothing to evoke there.')
+				message('Nothing to evoke there.', libtcod.white, game_msgs)
 				return 'didnt-take-turn'
 
 
@@ -1718,7 +1563,7 @@ def handle_keys():
 					next_level()
 
 				else:
-					message("You can't go down here!")
+					message("You can't go down here!", libtcod.white, game_msgs)
 
 
 			elif key_char == 's':
@@ -1787,7 +1632,7 @@ def draw_glyph(glyphname):
 	if glyphtile.special and glyphtile.special.name == 'drawing':
 		glyphtile.special.char = glyph
 		glyphtile.special.name = 'glyph'
-	else: message("You can't draw a glyph here.", libtcod.red)
+	else: message("You can't draw a glyph here.", libtcod.red, game_msgs)
 
 
 
@@ -1904,46 +1749,6 @@ def get_full_item_list():
 		itemlist.append(item_obj)
 	return itemlist
 
-def render_all():
-	global fov_map, color_dark_wall, color_light_wall
-	global color_dark_ground, color_light_ground
-	global fov_recompute
-
-	if fov_recompute:
-		fov_recompute = False
-		libtcod.map_compute_fov(fov_map, player.x, player.y, TORCH_RADIUS, FOV_LIGHT_WALLS, FOV_ALGO)
-
-	for object in objects:
-		if object.fighter and len(object.fighter.status) > 0:
-			for stati in object.fighter.status:
-				if isinstance(stati, GraphicalStatus): stati.activate()
-				
-	camera.camera_render()
-
-	for obj in objects:
-		if obj.in_camera(): obj.draw()
-
-	player.draw()
-	for obj in objects:
-		if obj.name == 'targeter': obj.draw()
-
-	#blits the content of the 'con' console to the root console
-	libtcod.console_blit(con, 0, 0, CAMERA_WIDTH, CAMERA_HEIGHT, 0, 0, 0)
-	libtcod.console_set_default_background(panel, libtcod.black)
-	libtcod.console_clear(panel)
-	#print game messages, one line at a time
-	y = 1
-	for (line, color) in game_msgs:
-		libtcod.console_set_default_foreground(panel,color)
-		libtcod.console_print_ex(panel,MSG_X, y, libtcod.BKGND_NONE, libtcod. LEFT, line)
-		y += 1
-
-	render_bar(1, 1, BAR_WIDTH, 'Health', player.fighter.hp, player.fighter.max_hp, libtcod.dark_red, libtcod.darkest_red) # display health
-	libtcod.console_print_ex(panel, 1, 3, libtcod.BKGND_NONE, libtcod.LEFT, 'Dungeon level ' + str(dungeon_level))  #display dungeon level
-
-	
-	#blits the content of the 'panel' console to the root console
-	libtcod.console_blit(panel, 0, 0, SCREEN_WIDTH, PANEL_HEIGHT, 0, 0, PANEL_Y)
 
 def clear_screen(): #this is slow, usually you will want libtcod.console_clear instead
 	clearer = libtcod.console_new(SCREEN_WIDTH, SCREEN_HEIGHT)
@@ -1959,29 +1764,7 @@ def create_room(room):
 			gamemap[x][y].blocked = False
 			gamemap[x][y].block_sight = False
 
-def random_choice_index(chances):  #choose one option from list of chances, returning its index
-	#the dice will land on some number between 1 and the sum of the chances
-	if chances == []: return 0
-	dice = libtcod.random_get_int(0, 0, sum(chances)) #getting a [] from random_choice  < get_random_item_of_depthlevel
 
- 
-	#go through all chances, keeping the sum so far
-	running_sum = 0
-	choice = 0
-	for w in chances:
-		running_sum += w         
- 
-		#see if the dice landed in the part that corresponds to this choice
-		if dice <= running_sum:
-			return choice 
-		choice += 1
-
-
-def random_choice(chances_dict):
-	#choose one option from dictionary of chances, returning its key
-	chances = chances_dict.values()
-	strings = chances_dict.keys()
-	return strings[random_choice_index(chances)]  #here lies a bug that took a newbie a full beautiful sunday to squash, rip in piss
 
 def create_h_tunnel(x1,x2,y):
 	global gamemap
@@ -2047,7 +1830,6 @@ def generate_item(name, x, y): #RETURNS HIGHEST OBJECT, NOT ITEM OR EQUIP COMPON
 	elif name == "heavy broomstick":
 		item = GameObj(x,y, '/', name, libtcod.darkest_sepia)
 
-	print name
 	return item
 
 def generate_tile(name, x, y):
@@ -2096,26 +1878,18 @@ def is_blocked(x,y):
 
 	return False
 
-def product(iterable):
-	if hasattr(iterable, '__iter__'):
-		p = 1
-		for n in iterable:
-			p *= n
-		return p
-	else: return iterable
-
 
 def player_death(player):
 
 	global game_state
-	message('You died')
+	message('You died', libtcod.white, game_msgs)
 	game_state = 'dead'
 
 	player.char = '%'
 	player.color = libtcod.dark_red
 
 def monster_death(monster):
-	message('The ' + monster.name + ' dies, gurgling blood.')
+	message('The ' + monster.name + ' dies, gurgling blood.', libtcod.white, game_msgs)
 	monster.char = '%'
 	monster.blocks = False
 	monster.fighter = None
@@ -2123,28 +1897,7 @@ def monster_death(monster):
 	monster.name = 'remains of ' + monster.name
 	monster.send_to_back()
 
-def render_bar(x, y, total_width, name, value, maximum, bar_color, back_color):
-	bar_width = int(float(value) / maximum * total_width)
 
-	libtcod.console_set_default_background(panel, back_color)
-	libtcod.console_rect(panel, x, y, total_width, 1, False, libtcod.BKGND_SCREEN)
-
-
-	libtcod.console_set_default_background(panel, bar_color)
-	if bar_width > 0:
-		libtcod.console_rect(panel,x,y,bar_width, 1, False, libtcod.BKGND_SCREEN)
-
-	libtcod.console_set_default_foreground(panel, libtcod.white)
-	libtcod.console_print_ex(panel, x + total_width / 2, y, libtcod.BKGND_NONE, libtcod.CENTER, name + ': ' + str(value) + '/' + str(maximum))
-
-def message(new_msg, color = libtcod.white):
-	new_msg_lines = textwrap.wrap(new_msg, MSG_WIDTH)
-
-	for line in new_msg_lines:
-		if len(game_msgs) == MSG_HEIGHT:
-			del game_msgs[0]
-
-		game_msgs.append( (line, color) )
 
 def initialize_fov():
 	global fov_recompute, fov_map
@@ -2292,14 +2045,14 @@ def msgbox(message, width=50):
 def target_tile(max_range = None):
 	global objects
 
-	message('Choose a target - ESC to cancel.', libtcod.red)
+	message('Choose a target - ESC to cancel.', libtcod.red, game_msgs)
 	targeter = GameObj(player.x, player.y, '+', 'targeter', libtcod.red,ignore_fov = True)
 	objects.append(targeter)
 	
 
 	while True:
 
-		render_all()
+		render_all(fov_map, fov_recompute, objects, game_msgs, player, camera, panel, con, dungeon_level)
 		targeter.send_to_front()
 		targeter.clear()
 		libtcod.console_flush()
@@ -2341,7 +2094,7 @@ def target_tile(max_range = None):
 			return targeter.x, targeter.y
 
 		elif (keyb.vk == libtcod.KEY_ENTER and not libtcod.map_is_in_fov(fov_map, targeter.x, targeter.y)):
-			message('You cannot target there!', libtcod.grey)
+			message('You cannot target there!', libtcod.grey, game_msgs)
 
 
 		else:
@@ -2389,7 +2142,7 @@ def target_monster(max_range=None):
 			if obj.x == x and obj.y == y and obj.fighter and obj != player:
 				return obj
 
-		message('Nothing to target there!', libtcod.grey)
+		message('Nothing to target there!', libtcod.grey, game_msgs)
 
 def clear_game():
 	global objects
@@ -2412,12 +2165,10 @@ def new_game():
 	colorkeeper = {}
 	game_msgs = []
 
-
 	make_map()
 
-	camera = Camera()
-
 	initialize_fov()
+	camera = Camera(player = player, fov_map = fov_map, gamemap = gamemap, con = con)
 
 	game_state = 'playing'
 
@@ -2440,10 +2191,10 @@ def push(origin, target, distance):#only usable for 1 tile distance between targ
 
 def pot_heal():
 	if player.fighter.hp == player.fighter.max_hp:
-		message('You are at full health already!')
+		message('You are at full health already!', libtcod.white, game_msgs)
 		return 'cancelled'
 
-	message('Your wounds start to feel better.')
+	message('Your wounds start to feel better.', libtcod.white, game_msgs)
 	player.fighter.heal(POTHEAL_AMOUNT)
 
 # def draw_laser(origin, end, char, color): #origin and end must be GameObj(or otherwise also have camx, camy attributes)
@@ -2467,7 +2218,7 @@ def consumable_pipegun():
 	if monster is None:
 		return 'cancelled'
 	else:
-		message('The slug explodes out of the flimsy gun with a loud thunder and strikes the ' + monster.name + '! The damage is '+ str(LIGHTNING_DAMAGE) + ' hit points.', libtcod.light_blue)
+		message('The slug explodes out of the flimsy gun with a loud thunder and strikes the ' + monster.name + '! The damage is '+ str(LIGHTNING_DAMAGE) + ' hit points.', libtcod.light_blue, game_msgs)
 		# draw_laser(player, monster, graphical.determine_projchar(player, monster), libtcod.light_blue)
 		line = graphical.LineHandler(player, monster, libtcod.light_blue)
 		# lineffect.draw(libtcod.light_blue) #it's in the init method now, not sure if i should keep it there
@@ -2485,11 +2236,11 @@ def consumable_crudenade():
 	x, y = target_tile()
 	if x is None: return 'cancelled'
 
-	message('The grenade explodes, spraying everything within ' + str(FIREBALL_RADIUS) + ' tiles with shrapnel!', libtcod.orange)
+	message('The grenade explodes, spraying everything within ' + str(FIREBALL_RADIUS) + ' tiles with shrapnel!', libtcod.orange, game_msgs)
 
 	for obj in objects:  #damage every fighter in range, including the player
 		if obj.distance(x, y) <= FIREBALL_RADIUS and obj.fighter:
-			if libtcod.map_is_in_fov(fov_map, obj.x, obj.y): message('The ' + obj.name + ' gets burned for ' + str(FIREBALL_DAMAGE) + ' hit points.', libtcod.orange)
+			if libtcod.map_is_in_fov(fov_map, obj.x, obj.y): message('The ' + obj.name + ' gets burned for ' + str(FIREBALL_DAMAGE) + ' hit points.', libtcod.orange, game_msgs)
 			obj.fighter.take_damage(FIREBALL_DAMAGE)
 
 
@@ -2560,7 +2311,6 @@ def determine_orientation(dxl, dyl):
 
 def get_enchant_value(equipment, enchantname):
 	enchant = [filter(lambda x: x.name == enchantname, equipment.special.enchantlist)]
-	print enchant
 	while isinstance(enchant, list):
 		enchant = enchant[0]
 	return enchant.value

@@ -2,10 +2,11 @@ from utility import *
 import libtcodpy as libtcod
 import graphical
 from floodfill import enclosed_space_processing
+from messages import *
 
 
 class RitualDraw(object): #each drawing main body is represented by this
-	def __init__(self, originx, originy, player, gamemap, objects, drawdir):
+	def __init__(self, originx, originy, player, gamemap, objects, drawdir, game_msgs):
 		self.length = 1
 		self.originx = originx
 		self.originy = originy
@@ -14,6 +15,7 @@ class RitualDraw(object): #each drawing main body is represented by this
 		self.drawdir = drawdir
 		self.objects = objects
 		self.drawntile_list = []
+		self.game_msgs = game_msgs
 		self.concluded = False
 		self.spent = False
 
@@ -54,6 +56,7 @@ class RitualDraw(object): #each drawing main body is represented by this
 		glyphs = self.get_glyphs()
 		affected = self.get_affected()
 		shape = self.determine_shape()
+		print shape
 		graphichandler = graphical.PlainAreaEffect(self.get_affected_tiles(), fadetime = 5, color1 = libtcod.white, color2 = libtcod.black)
 
 		if shape == 'focus cross':
@@ -63,20 +66,19 @@ class RitualDraw(object): #each drawing main body is represented by this
 
 		elif shape == 'enclosed': power += 7
 		power += self.player.rtree.level*2
-
 		for glyph in glyphs:
 			if glyph.special.char == 264:
 				for dude in affected:
 					if dude.fighter: dude.fighter.take_damage(int(round(power*1.5)))
-					message("The " + dude.name + " is blasted by a wave of energy!")
+					message("The " + dude.name + " is blasted by a wave of energy!", libtcod.green, self.game_msgs)
 			if glyph.special.char == 265:
 				for dude in affected:
 					dude.fighter.receive_status('DoT', 7, power = power)
-					message('The '+ dude.name + "'s flesh starts to decay!")
+					message('The '+ dude.name + "'s flesh starts to decay!", libtcod.green, self.game_msgs)
 			if glyph.special.char == 266:
 				for dude in affected:
 					dude.fighter.receive_status('slow', int(round(float(power)/2)), power = power)
-					message('The '+ dude.name + "'s movements become dull!")
+					message('The '+ dude.name + "'s movements become dull!", libtcod.green, self.game_msgs)
 
 		for tile in self.drawntile_list:
 			tile.special.char = "'"
@@ -151,11 +153,14 @@ class RitualDraw(object): #each drawing main body is represented by this
 
 		elif shape == 'linear':
 			affected += self.drawntile_list
-		elif shape == 'enclosed':
+
+		elif shape == 'enclosed' or shape == 'diamond':
 			affected += self.drawntile_list
 			enclosed_coords = enclosed_space_processing(self.drawntile_list)
 			for x,y in enclosed_coords:
 				affected.append(self.gamemap[x][y]) 
+
+
 		return affected
 
 	def get_center(self):
@@ -174,91 +179,75 @@ class RitualDraw(object): #each drawing main body is represented by this
 
 		return center
 
+
+	def diamond_test(self):
+		all_x = map(lambda tile: tile.x, self.drawntile_list)
+		all_y = map(lambda tile: tile.y, self.drawntile_list)
+		w = max(all_x) - min(all_x)
+		h = max(all_y) - min(all_y)
+
+		if w != h: return False
+		if w % 2 != 0: return False
+
+		boundingbox = Rect(min(all_x), min(all_y), w, h)
+
+		full_diamondtiles = []
+		for i in range(w/2 + 1):
+			tile1 = self.gamemap[boundingbox.x1 + i][boundingbox.y1 + w/2 - i]
+			tile2 = self.gamemap[boundingbox.x1 + i][boundingbox.y1 + w/2 + i]
+			tile3 = self.gamemap[boundingbox.x1 + w/2 + i][boundingbox.y1 + i]
+			tile4 = self.gamemap[boundingbox.x1 + w/2 + i][boundingbox.y1 + w - i]
+			full = [tile1, tile2, tile3, tile4]
+			full_diamondtiles += full
+
+		return set(full_diamondtiles) == set(self.drawntile_list)
+
 	def focus_cross_test(self): #creates a focus cross (X) from the bounding box and tests if the actual drawing is the exact same
 		all_x = map(lambda tile: tile.x, self.drawntile_list)
 		all_y = map(lambda tile: tile.y, self.drawntile_list)
 		w = max(all_x) - min(all_x)
 		h = max(all_y) - min(all_y)
+
+		if w != h: return False
+
 		boundingbox = Rect(min(all_x), min(all_y), w, h)
 		diag1 = [self.gamemap[boundingbox.x1+i][boundingbox.y1+i] for i in range(w+1)]
 		diag2 = [self.gamemap[boundingbox.x2-i][boundingbox.y1+i] for i in range(w+1)]
-		selfdiag1 = []
-		selfdiag2 = []
-		for tile in diag1:
-			if tile in self.drawntile_list:
-				selfdiag1.append(tile)
-			else: return False
-		for tile in diag2:
-			if tile in self.drawntile_list:
-				selfdiag2.append(tile)
-			else: return False
-
-		full_crosstiles = selfdiag1 + selfdiag2
-		if set(full_crosstiles) == set(self.drawntile_list):
-			return True
-		else: return False
 
 
+		full_crosstiles = diag1 + diag2
+
+		return set(full_crosstiles) == set(self.drawntile_list)
 
 
+	def aoe_cross_test(self):
+		all_x = map(lambda tile: tile.x, self.drawntile_list)
+		all_y = map(lambda tile: tile.y, self.drawntile_list)
+		w = max(all_x) - min(all_x)
+		h = max(all_y) - min(all_y)
+
+		if w != h: return False
+		if w % 2 != 0: return False
+
+		boundingbox = Rect(min(all_x), min(all_y), w, w)
+		vert = [self.gamemap[boundingbox.x1 + w/2][boundingbox.y1 + i] for i in range(w+1)]
+		hori = [self.gamemap[boundingbox.x1 + i][boundingbox.y1 + h/2] for i in range(w+1)]
 
 
-	def determine_shape(self): #what an ugly piece of code
-		width, height = self.get_dimensions()
-		aoe_cross = True
-		focus_cross = True
-		diamond = True
+		full_crosstiles = vert + hori
+
+		return set(full_crosstiles) == set(self.drawntile_list)
+
+	def determine_shape(self):
+		if len(self.drawntile_list) <= 4: return 'linear'
+
+		aoe_cross = self.aoe_cross_test()
+		focus_cross = self.focus_cross_test()
+		diamond = self.diamond_test()
 		nonglyphs = filter(lambda x: x.special.name == 'drawing', self.drawntile_list)
 		charlist = map(lambda x: x.special.char, nonglyphs)
-		if width == height: #only for this type of ritual drawing
 
-			for char in charlist: #first, filter by size and characters
-				if char not in [15, 196, 197, 179]:
-					aoe_cross = False
-				if char not in [15, 188, 189, 190]:
-					focus_cross = False
-				if char not in [15, 209, 210, 211, 212, 190, 188, 189]:
-					diamond = False
-
-			center_tile = self.get_center()
-			if center_tile is None:
-				aoe_cross = False
-			elif center_tile.special.char == 188:
-				aoe_cross = False
-				diamond = False
-			elif center_tile.special.char == 197:
-				focus_cross = False
-				diamond = False
-
-			print aoe_cross, focus_cross, diamond
-		 	#check for symmetry
-			all_x = map(lambda tile: tile.x, self.drawntile_list)
-			all_y = map(lambda tile: tile.y, self.drawntile_list)
-			minx = min(all_x)
-			miny = min(all_y)
-			center_coord = Point(round(minx+float(width)/2 - 1), round(miny + float(height)/2 - 1))
-			left_of_center = filter(lambda tile: tile.x < center_coord.x, self.drawntile_list)
-			right_of_center = filter(lambda tile: tile.x > center_coord.x, self.drawntile_list)
-			above_center = filter(lambda tile: tile.y < center_coord.y, self.drawntile_list)
-			below_center = filter(lambda tile: tile.y > center_coord.y, self.drawntile_list)
-
-			print len(left_of_center), len(right_of_center), len(above_center), len(below_center)
-			if not len(left_of_center) == len(right_of_center) == len(above_center) == len(below_center):
-				aoe_cross = False
-				focus_cross = False
-				diamond = False
-
-			if self.focus_cross_test(): #the way it's done inside that method is much better than this filtering-down crap, perhaps i'll refactor it all into the same format later
-				aoe_cross = False #in focus_cross_test i get the bounding box and draw out what would be the correct figure, then compare the two sets of tiles
-				focus_cross = True
-				diamond = False
-
-
-		else: 
-			aoe_cross = False
-			focus_cross = False
-			diamond = False
-
+		print aoe_cross, focus_cross, diamond
 		if aoe_cross == True and focus_cross == False and diamond == False: return 'aoe cross'
 		elif aoe_cross == False and focus_cross == False and diamond == True: return 'diamond'
 		elif aoe_cross == False and focus_cross == True and diamond == False: return 'focus cross'
@@ -270,11 +259,10 @@ class RitualDraw(object): #each drawing main body is represented by this
 
 			
 	def merge(self, inactive_drawing):
-		global drawdir
 
 		duplicates_removed = filter(lambda x: x not in self.drawntile_list, inactive_drawing.drawntile_list)
 		self.drawntile_list += duplicates_removed
-		drawdir.drawinglist.remove(inactive_drawing)
+		self.drawdir.drawinglist.remove(inactive_drawing)
 
 	def get_dimensions(self):
 		xcoords = map(lambda tile: tile.x, self.drawntile_list)
