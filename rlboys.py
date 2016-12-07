@@ -14,9 +14,11 @@ from render import *
 #===============#
 import catalog
 import graphical
+import AI
 from utility import *
 from sett import *
 from messages import *
+
 #TODO: big todos:
 #TODO: Graphical effects(floating text, floating numbers maybe, blood, buff effects)##floating text done
 #TODO: map generation
@@ -37,7 +39,7 @@ class PlayerStats(object):
 		self.attunement = stats['attunement']
 						
 
-class DrawingDir(object): #singleton drawdir
+class DrawingDir(object):
 	def __init__(self): #keeps record of ritual drawings on the ground that are not yet activated, since I want the player to be able to have multiple of them set up at once
 		self.drawinglist = []
 	def clear(self):
@@ -52,9 +54,18 @@ class DrawingDir(object): #singleton drawdir
 			print '####################################################'
 			print 'WARNING: Call for active drawing that did not exist'
 			print '####################################################'
-	
 
-class PlayerActionReport(object): #singleton, director
+class GlobalDir(object):# globals not in here: camera, con, panel, director
+	def __init__(self):
+		self.game_objs = []
+		self.colorkeeper = {}
+		self.namekeeper = {}
+		self.dungeon_level = 1
+		self.drawdir = DrawingDir()
+		self.game_msgs = []
+		self.game_state = 'playing'
+		
+class PlayerActionReport(object): 
 	def __init__(self, action = None, x1 = None, y1 = None, x2 = None, y2 = None, objects = None, action_extra = None, takes_turn = True):
 		self.action = action
 		self.action_extra = action_extra   #
@@ -64,8 +75,9 @@ class PlayerActionReport(object): #singleton, director
 		self.y1 = y1                       #Remember to add a director update call to every player action
 		self.x2 = x2                       #
 		self.y2 = y2                       #
-		self.objects = objects             #
+		self.objects = objects             # objects involved in the last action, not the global
 		self.recorder = deque([], 20)                 #
+
 
 	def __dir__(self):
 		return ['action', 'x1', 'y1', 'y2', 'x2', 'objects', 'action_extra', 'takes_turn']
@@ -83,8 +95,8 @@ class PlayerActionReport(object): #singleton, director
 			except: raise ValueError('Something has gone wrong with the game director. Check what got passed through director.update', attrname, setnone, dir(self))
 
 		if 'takes_turn' not in kwargs: self.takes_turn = True
-		if 'x1' not in kwargs: self.x1 = player.x
-		if 'y1' not in kwargs: self.y1 = player.y
+		if 'x1' not in kwargs: self.x1 = gldir.player.x
+		if 'y1' not in kwargs: self.y1 = gldir.player.y
 
 
 		self.add_to_recorder()
@@ -209,12 +221,13 @@ class Ccreation: #singleton, ccreation -- DOES NOT NEED TO BE A SINGLETON - its 
 		self.chosenperk = chosenperk
 
 	def run_creation(self):
-		global player
-		player = Player()
-		player.ctree = SkillTree('combat', 1)
-		player.ttree = SkillTree('tech', 0)
-		player.rtree = SkillTree('ritual', 0)
-		player.ptree = PerkTree('perks', 0)
+		global gldir
+		gldir = GlobalDir()
+		gldir.player = Player()
+		gldir.player.ctree = SkillTree('combat', 1)
+		gldir.player.ttree = SkillTree('tech', 0)
+		gldir.player.rtree = SkillTree('ritual', 0)
+		gldir.player.ptree = PerkTree('perks', 0)
 
 
 		while self.stage != 'complete':
@@ -339,13 +352,13 @@ class Equipment:
 		#equip object and show a message about it
 		if equipper == 'player':
 			if self.twohand and get_equipped_in_slot('off hand'): 
-				message("The " + self.owner.name + ' requires both hands to use.', game_msgs)
+				message("The " + self.owner.name + ' requires both hands to use.', gldir.game_msgs)
 				return
 				
 			if get_equipped_in_slot(self.slot):
 				get_equipped_in_slot(self.slot).unequip()
 			self.is_equipped = True
-			message('Equipped ' + self.owner.item.dname + ' on your ' + self.slot + '.', libtcod.light_green, game_msgs)
+			message('Equipped ' + self.owner.item.dname + ' on your ' + self.slot + '.', libtcod.light_green, gldir.game_msgs)
 			director.update(action = 'equip item', object_s = self.owner)
 
 
@@ -355,9 +368,9 @@ class Equipment:
 		self.is_equipped = False
 		if self.equiptype == 'staff':
 			for statusname in ['parry staff stance', 'hammer staff stance', 'spear staff stance']:
-				status = get_status_from_name(player, statusname)
+				status = get_status_from_name(gldir.player, statusname)
 				if status: status.terminate()
-		message('Unequipped ' + self.owner.item.dname + ' from ' + self.slot + '.', libtcod.light_yellow, game_msgs)
+		message('Unequipped ' + self.owner.item.dname + ' from ' + self.slot + '.', libtcod.light_yellow, gldir.game_msgs)
 		director.update(action = 'unequip item', object_s = self.owner)
 
 	def equip_options(self): #upon getting chosen from the equipment menu
@@ -400,13 +413,13 @@ class Equipment:
 				elif enchant.name == 'maim chance':
 					if libtcod.random_get_float(0,0,1) <= enchant.value:
 						target.fighter.receive_status('maim', enchant.duration)
-						message('Your attack maims the enemy!', libtcod.light_blue, game_msgs)
+						message('Your attack maims the enemy!', libtcod.light_blue, gldir.game_msgs)
 				elif enchant.name == 'stun chance':
 					if libtcod.random_get_float(0,0,1) <= enchant.value:
 						target.fighter.receive_status('stun', enchant.duration)
-						message('Your attack stuns the enemy!', libtcod.light_blue, game_msgs)
+						message('Your attack stuns the enemy!', libtcod.light_blue, gldir.game_msgs)
 
-		if self.equiptype == 'staff' and get_status_from_name(player, 'hammer staff stance'):
+		if self.equiptype == 'staff' and get_status_from_name(gldir.player, 'hammer staff stance'):
 			bonusdmg.add(origin.stats['strength'] * 0.5)
 
 		return bonusdmg
@@ -429,46 +442,46 @@ class Item:
 		#possible itemtypes: equipment, salve, gadget, trinket, chalk
 
 	def pick_up(self):
-		if self.owner.name in map(lambda x: x.name, player.inventory) and self.itemtype in ['gadget', 'salve', 'chalk']:
-			invitem = filter(lambda x: x.name == self.owner.name, player.inventory)
+		if self.owner.name in map(lambda x: x.name, gldir.player.inventory) and self.itemtype in ['gadget', 'salve', 'chalk']:
+			invitem = filter(lambda x: x.name == self.owner.name, gldir.player.inventory)
 			invitem = invitem[0]
 			invitem.item.stack += self.stack # same thing as normal pickup but just increments to stack
-			objects.remove(self.owner)
-			message('You picked up ' + self.dname + '!', libtcod.green, game_msgs)
+			gldir.game_objs.remove(self.owner)
+			message('You picked up ' + self.dname + '!', libtcod.green, gldir.game_msgs)
 			director.update(action = 'pick up item', object_s = self.owner)
 
-		elif len(player.inventory)>=26:
-			message('Your inventory is full', libtcod.white, game_msgs)
+		elif len(gldir.player.inventory)>=26:
+			message('Your inventory is full', libtcod.white, gldir.game_msgs)
 			return False
-		elif sum([item.item.weight for item in player.inventory]) > player.max_weight:
-			message("You're carrying too much already!", libtcod.white, game_msgs)
+		elif sum([item.item.weight for item in gldir.player.inventory]) > gldir.player.max_weight:
+			message("You're carrying too much already!", libtcod.white, gldir.game_msgs)
 			return False
 
 		else:
-			player.inventory.append(self.owner)  # inventory has objects, not item
-			objects.remove(self.owner)
-			message('You picked up ' + self.dname + '!', libtcod.green, game_msgs)
+			gldir.player.inventory.append(self.owner)  # inventory has objects, not item
+			gldir.game_objs.remove(self.owner)
+			message('You picked up ' + self.dname + '!', libtcod.green, gldir.game_msgs)
 			director.update(action = 'pick up item', object_s = self.owner)
 			return True
 
 	def use(self):
 		if not self.use_function:
-			message('The ' + self.owner.name + ' cannot be used.', libtcod.white, game_msgs)
+			message('The ' + self.owner.name + ' cannot be used.', libtcod.white, gldir.game_msgs)
 		elif self.itemtype == "chalk":
 			self.use_function(self)
 		elif self.use_function() != 'cancelled' and self.itemtype != 'equipment':  #conditions for persistent/charge-based consumables go here
 			self.stack -= 1
-			if self.stack < 1: player.inventory.remove(self.owner)
+			if self.stack < 1: gldir.player.inventory.remove(self.owner)
 			director.update(action = 'use item', object_s = self.owner)
 
 	def drop(self):
 		#add to the map and remove from the player's inventory. also, place it at the player's coordinates
-		objects.insert(0,self.owner)
-		player.inventory.remove(self.owner)
+		gldir.game_objs.insert(0,self.owner)
+		gldir.player.inventory.remove(self.owner)
 		if self.owner.equipment and self.owner.equipment.is_equipped: self.owner.equipment.unequip()
-		self.owner.x = player.x
-		self.owner.y = player.y
-		message('You dropped a ' + self.dname + '.', libtcod.yellow, game_msgs)
+		self.owner.x = gldir.player.x
+		self.owner.y = gldir.player.y
+		message('You dropped a ' + self.dname + '.', libtcod.yellow, gldir.game_msgs)
 		director.update(action = 'drop item', object_s = self.owner)
 
 	def examine(self):
@@ -479,6 +492,9 @@ class Item:
 
 	def item_options(self):
 		options = ['Examine', 'Drop', 'Use']
+		if self.owner.equipment:
+			options.append('Equip')
+
 		index = menu('Choose an action: ', options, 50)
 		if index == 0:#examine
 			self.examine()
@@ -492,12 +508,15 @@ class Item:
 			self.use() 
 			return 'use'
 
+		if options[index] == 'Equip':
+			self.owner.equipment.equip('player')
+			return 'equip'
+
 	@property
 	def dname(self):#short for display name
-		global namekeeper
 		dname = self.owner.name
 
-		if self.owner.name in namekeeper:
+		if self.owner.name in gldir.namekeeper:
 			self.already_seen = True
 
 		if self.stack > 1: dname += ' (' + str(self.stack) + ')'
@@ -509,20 +528,20 @@ class Item:
 			elif self.itemtype == 'salve': 
 				if not self.already_seen:
 					unidname = catalog.random_salve_name(self)
-					namekeeper[self.owner.name] = unidname
-				else: unidname = namekeeper[self.owner.name]
+					gldir.namekeeper[self.owner.name] = unidname
+				else: unidname = gldir.namekeeper[self.owner.name]
 			elif self.itemtype == 'gadget':
 				if not self.already_seen:
 					unidname = catalog.random_gadget_name(self)
-					namekeeper[self.owner.name] = unidname
-				else: unidname = namekeeper[self.owner.name]
+					gldir.namekeeper[self.owner.name] = unidname
+				else: unidname = gldir.namekeeper[self.owner.name]
 			return unidname
 
 		else: return dname
 
 	@property
 	def weight(self):
-		return self._weight * stack
+		return self._weight * self.stack
 
 
 	@weight.setter
@@ -561,31 +580,31 @@ class StatusEffect(object): #TODO: STACKING BEHAVIOUR FOR STATUS EFFECTS
 				drawing_function(self)
 				self.pen.stack -= 1
 			else: 
-				message('You ran out of ' + self.pen.owner.name, libtcod.light_red +'.', game_msgs)
-				player.inventory.remove(self.pen.owner)
+				message('You ran out of ' + self.pen.owner.name, libtcod.light_red +'.', gldir.game_msgs)
+				gldir.player.inventory.remove(self.pen.owner)
 				self.terminate()
 		elif self.name == 'DoT':
 			self.affected.take_damage(round(self.power*0.4))
 		elif self.name == 'stun':
 			self.affected.energy = 0
-			message('The '+ self.affected.owner.name + ' is too stunned to act.', libtcod.light_blue, game_msgs)
+			message('The '+ self.affected.owner.name + ' is too stunned to act.', libtcod.light_blue, gldir.game_msgs)
 		elif self.name == 'sprint':
 			if isinstance(self.affected.owner, Player):
 				if director.action == 'move':
-					player.act_points -= player.fighter.speed/3
+					gldir.player.act_points -= gldir.player.fighter.speed/3
 		elif self.name == 'sprint exhaustion':
 			if isinstance(self.affected.owner, Player):
-				player.act_points += player.fighter.speed/3
+				gldir.player.act_points += gldir.player.fighter.speed/3
 		self.duration -= 1
 
 
 	def endfunction(self):
 		if self.name == 'sprint':
-			message("You stop sprinting. You're exhausted, slowing you down.", libtcod.light_red, game_msgs)
+			message("You stop sprinting. You're exhausted, slowing you down.", libtcod.light_red, gldir.game_msgs)
 			self.affected.receive_status('sprint exhaustion', 20)
 
 		if self.name == 'sprint exhaustion':
-			message("You're no longer exhausted. You can sprint again.", libtcod.green, game_msgs)
+			message("You're no longer exhausted. You can sprint again.", libtcod.green, gldir.game_msgs)
 
 class Fighter:
 	def __init__(self, hp, armor, power, xp,  death_function = None, depth_level = 1, speed = 100):
@@ -608,7 +627,7 @@ class Fighter:
 		if damage > 0:
 			self.hp -= damage
 			if self.hp < 0:
-				player.fighter.xp += self.xp
+				gldir.player.fighter.xp += self.xp
 				function = self.death_function
 				if function is not None:
 					function(self.owner)
@@ -638,7 +657,7 @@ class Fighter:
 						polearm_penalty = get_enchant_value(get_equipped_in_slot('main hand'), 'polearm reach')
 						damage.add(Dmg(0, polearm_penalty, 0)) #multiplier
 
-				if weapon and weapon.equiptype == 'staff' and get_status_from_name(player, 'spear staff stance') and self.owner.distance_to(target) < 2:
+				if weapon and weapon.equiptype == 'staff' and get_status_from_name(gldir.player, 'spear staff stance') and self.owner.distance_to(target) < 2:
 					damage.add(Dmg(0, 0.5, 0))
 
 
@@ -647,7 +666,7 @@ class Fighter:
 
 				if finaldmg < 0: finaldmg = 0
 
-				message('You attack the ' + target.name + ' for ' + str(int(round(finaldmg))) + ' hit points.', libtcod.white, game_msgs)
+				message('You attack the ' + target.name + ' for ' + str(int(round(finaldmg))) + ' hit points.', libtcod.white, gldir.game_msgs)
 				target.fighter.take_damage(finaldmg)
 			director.update(action = 'attack', x2 = target.x, y2 = target.y)
 
@@ -655,11 +674,11 @@ class Fighter:
 			if libtcod.random_get_int(0, 1, 100) > int(round(target.dodge * 1.3)):
 				damage = self.power() - target.fighter.armor
 				if damage > 0:
-					message(self.owner.name.capitalize() + ' attacks ' + target.name + ' for ' + str(int(round(damage))) + ' hit points.', libtcod.white, game_msgs)
+					message(self.owner.name.capitalize() + ' attacks ' + target.name + ' for ' + str(int(round(damage))) + ' hit points.', libtcod.white, gldir.game_msgs)
 					target.fighter.take_damage(damage)
 				else:
-					message(self.owner.name.capitalize() + ' attacks ' + target.name + ' but it has no effect!', libtcod.white, game_msgs)
-			else: message(self.owner.name.capitalize() + ' misses ' + target.name + ' completely!', libtcod.lightest_green, game_msgs)
+					message(self.owner.name.capitalize() + ' attacks ' + target.name + ' but it has no effect!', libtcod.white, gldir.game_msgs)
+			else: message(self.owner.name.capitalize() + ' misses ' + target.name + ' completely!', libtcod.lightest_green, gldir.game_msgs)
 
 
 	def heal(self, amount):
@@ -669,10 +688,10 @@ class Fighter:
 
 	def power(self, multipliers = [1]):
 
-		if self.owner is player:
+		if self.owner is gldir.player:
 
 			equipments = get_all_equipped(self.owner)
-			flat_bonus = 3
+			flat_bonus = 1
 			equiproll = 0
 			multiplicative_component = 0
 
@@ -680,7 +699,7 @@ class Fighter:
 				equiproll += equip.roll_dmg()
 			multiplicative_component += equiproll
 
-			combat_flatbonus = player.ctree.level * 2
+			combat_flatbonus = gldir.player.ctree.level * 2
 			flat_bonus += combat_flatbonus
 
 
@@ -729,49 +748,7 @@ class Dmg:
 
 
 
-class DumbMonster:  # basic AI
-	def __init__(self):
-		self.action = ''
-		self.target = None
-		self.cost = 0
 
-	def formulate_turn(self):
-		monster = self.owner
-		if libtcod.map_is_in_fov(fov_map, monster.x, monster.y):
-			
-			if monster.distance_to(player) >= 2:
-				self.action = 'move'
-				self.target = player
-				self.cost = self.determine_cost()
-
-			elif player.fighter.hp >= 0:
-				self.action = 'attack'
-				self.target = player
-				self.cost = self.determine_cost()
-
-				
-	def determine_cost(self):
-		cost = 100
-		for stati in self.owner.fighter.status:
-			if stati.name == 'maim' and self.action == 'move': cost += 50
-			if stati.name == 'slow': cost += int(round(stati.power*1.25))
-		return cost
-
-
-	def take_turn(self):
-		while True:
-			self.formulate_turn()
-			self.cost = self.determine_cost()
-			monster = self.owner
-
-			if self.cost > monster.fighter.energy: return
-
-			monster.fighter.energy -= self.cost
-			if self.action == 'move':
-				monster.move_astar(self.target)
-
-			elif self.action == 'attack':
-				monster.fighter.attack(self.target)
 
 
 
@@ -802,7 +779,7 @@ class Tile:
 		if block_sight is None:	self.block_sight = blocked
 
 	def get_drawing(self):
-		for drawing in drawdir.drawinglist:
+		for drawing in gldir.drawdir.drawinglist:
 			if self in [tile for tile in drawing.drawntile_list]: #gets the drawing from the chosen tile
 				wanted_drawing = drawing
 				return wanted_drawing
@@ -816,6 +793,7 @@ class GameObj(object):
 	def __init__(self, x, y, char, name, color, blocks = False, fighter = None, ai = None, ignore_fov = False, equipment = None, item = None):
 		self.x = x
 		self.y = y
+		self.ai = ai
 		self.char = char
 		self.color = color
 		self.blocks = blocks
@@ -834,9 +812,7 @@ class GameObj(object):
 		if self.fighter:
 			self.fighter.owner = self
 
-		self.ai = ai
-		if self.ai:
-			self.ai.owner = self
+		self.get_ai_component()
 
 	def move_astar(self, target):
 		#Create a FOV map that has the dimensions of the map
@@ -850,8 +826,8 @@ class GameObj(object):
 		#Scan all the objects to see if there are objects that must be navigated around
 		#Check also that the object isn't self or the target (so that the start and the end points are free)
 		#The AI class handles the situation if self is next to the target so it will not use this A* function anyway   
-		for obj in objects:
-			if obj.blocks and obj != self and obj != target:
+		for obj in gldir.game_objs:
+			if obj.blocks and obj != self and (obj.x, obj.y) != (target.x, target.y):
 				#Set the tile as a wall so it must be navigated around
 				libtcod.map_set_properties(fov, obj.x, obj.y, True, False)
  
@@ -870,15 +846,15 @@ class GameObj(object):
 			x, y = libtcod.path_walk(my_path, True)
 			if x or y:
 				if get_equipped_in_slot('main hand'):
-					if get_equipped_in_slot('main hand').equiptype == 'polearm' and distance_between(Point(player.x, player.y), Point(x, y)) < 2 and not isinstance(self, Player):
+					if get_equipped_in_slot('main hand').equiptype == 'polearm' and distance_between(Point(gldir.player.x, gldir.player.y), Point(x, y)) < 2 and not isinstance(self, Player):
 						chance = get_enchant_value(get_equipped_in_slot('main hand'), 'polearm defense')
 						if libtcod.random_get_float(0, 0, 1) < chance:
-							message('You fend the ' + self.name + ' off with your polearm.', libtcod.green, game_msgs)
+							message('You fend the ' + self.name + ' off with your polearm.', libtcod.green, gldir.game_msgs)
 							return #add agility, strength components here later
 
-					if get_equipped_in_slot('main hand').equiptype == 'staff' and get_status_from_name(player, 'spear staff stance') and distance_between(Point(player.x, player.y), Point(x, y)) < 2 and not isinstance(self, Player):
+					if get_equipped_in_slot('main hand').equiptype == 'staff' and get_status_from_name(gldir.player, 'spear staff stance') and distance_between(Point(gldir.player.x, gldir.player.y), Point(x, y)) < 2 and not isinstance(self, Player):
 						if libtcod.random_get_float(0, 0, 1) < 0.4:
-							message('You fend the ' + self.name + ' off with your staff.', libtcod.green, game_msgs)
+							message('You fend the ' + self.name + ' off with your staff.', libtcod.green, gldir.game_msgs)
 							return
 
 				#Set self's coordinates to the next path tile
@@ -915,7 +891,7 @@ class GameObj(object):
 		self.y += dy
 
 	def draw(self):
-		if (libtcod.map_is_in_fov(fov_map, self.x, self.y) or self.ignore_fov):
+		if (libtcod.map_is_in_fov(gldir.fov_map, self.x, self.y) or self.ignore_fov):
 			libtcod.console_set_default_foreground(con, self.color)
 			libtcod.console_put_char_ex(con, self.camx, self.camy, self.char, self.color, libtcod.black)
 
@@ -945,14 +921,16 @@ class GameObj(object):
 		return math.sqrt((x - self.x) ** 2 + (y - self.y) ** 2)
 
 	def send_to_back(self):
-		global objects
-		objects.remove(self)
-		objects.insert(0, self)
+		gldir.game_objs.remove(self)
+		gldir.game_objs.insert(0, self)
 
 	def send_to_front(self):
-		global objects
-		objects.remove(self)
-		objects.append(self)
+		gldir.game_objs.remove(self)
+		gldir.game_objs.append(self)
+
+	def get_ai_component(self):
+		if self.name in catalog.FULL_MONSTERLIST:
+			self.ai = AI.DumbMonster(self, gldir)
 
 	def get_item_components(self):
 		if self.name == 'healing salve':  #only basic stats go here, for special functions and descriptions go to catalog
@@ -1005,8 +983,8 @@ class GameObj(object):
 		elif self.name == "chalk":
 			self.item = Item(self, weight = 0.05, depth_level = 1, itemtype = 'chalk', stack = 20)
 
-		if self.equipment and self.equipment.equiptype == 'staff': self.item.use_function = player.abl_staff_stance
-		if self.item.itemtype == 'chalk': self.item.use_function = player.abl_toggle_drawing
+		if self.equipment and self.equipment.equiptype == 'staff': self.item.use_function = gldir.player.abl_staff_stance
+		if self.item.itemtype == 'chalk': self.item.use_function = gldir.player.abl_toggle_drawing
 
 
 
@@ -1046,26 +1024,26 @@ class Player(GameObj):#player is inherited because it's easier since it has one 
 	def abl_kicklaunch(self): #return true if went through, false if its cancelled
 		target = random_adj_target()
 		if target == None:
-			message('Nobody to kick!', libtcod.white, game_msgs)
+			message('Nobody to kick!', libtcod.white, gldir.game_msgs)
 			return False
 			
 		dx, dy = graphical.get_increments(self, target)
 		dmg = self.fighter.power(multipliers = [0.5])
 		dmg = dmg.resolve()
 		target.fighter.take_damage(dmg)
-		message('You put all your strength behind a mighty kick, dealing ' + str(int(round(dmg))) + ' damage.', libtcod.light_green, game_msgs)
+		message('You put all your strength behind a mighty kick, dealing ' + str(int(round(dmg))) + ' damage.', libtcod.light_green, gldir.game_msgs)
 		
-		if push(self, target, 3) < 3: message('The ' + target.name + ' slams into something violently!', libtcod.light_green, game_msgs) 
+		if push(self, target, 3) < 3: message('The ' + target.name + ' slams into something violently!', libtcod.light_green, gldir.game_msgs) 
 		director.update(action = 'use ability', action_extra = 'kicklaunch', x2 = target.x, y2 = target.y)
 		return True
 # 		# ABILITY DISTANCE NUMBER
 	def abl_sprint(self):
 		statuslist = filter(lambda x: x.name in ['sprint', 'sprint exhaustion'], self.fighter.status)
 		if len(statuslist) == 0: 
-			message('You start sprinting.', libtcod.green, game_msgs)
+			message('You start sprinting.', libtcod.green, gldir.game_msgs)
 			self.fighter.receive_status('sprint', 15)
-		elif statuslist[0] == 'sprint': message("You're already sprinting.", libtcod.white, game_msgs) 
-		elif statuslist[0] == 'sprint exhaustion': message("You're exhausted.", libtcod.red, game_msgs) 
+		elif statuslist[0] == 'sprint': message("You're already sprinting.", libtcod.white, gldir.game_msgs) 
+		elif statuslist[0] == 'sprint exhaustion': message("You're exhausted.", libtcod.red, gldir.game_msgs) 
 	def abl_fling_trinket(self, chosen_trinket = None):
 		if not chosen_trinket: chosen_trinket = inventory_menu('Choose a trinket to throw:', itemtype = 'trinket') #so you can arrive here through 't' throw or 'a' ability > fling trinket..... remember inventory_menu returns None if it's cancelled
 		if not chosen_trinket: return
@@ -1078,26 +1056,26 @@ class Player(GameObj):#player is inherited because it's easier since it has one 
 			if pen == None:
 				pen = inventory_menu('Choose a drawing material.', 'chalk')
 				if pen == None: return 'didnt-take-turn'
-			player.fighter.receive_status('drawing', 0)
-			drawstatus = filter(lambda x: x.name == 'drawing', player.fighter.status)
+			gldir.player.fighter.receive_status('drawing', 0)
+			drawstatus = filter(lambda x: x.name == 'drawing', gldir.player.fighter.status)
 			drawstatus[0].pen = pen
 
 
 			director.update(action = 'start drawing')
-			drawing = RitualDraw(self.x, self.y, player, gamemap, objects, drawdir, game_msgs)
-			drawdir.drawinglist.append(drawing)
-			if player.rtree.level >=1 : message("You start chanting and drawing the runes of mystery...", libtcod.dark_violet, game_msgs)
-			else: message("You start scribbling on the floor.", libtcod.white, game_msgs)
+			drawing = RitualDraw(self.x, self.y, gamemap, gldir)
+			gldir.drawdir.drawinglist.append(drawing)
+			if gldir.player.rtree.level >=1 : message("You start chanting and drawing the runes of mystery...", libtcod.dark_violet, gldir.game_msgs)
+			else: message("You start scribbling on the floor.", libtcod.white, gldir.game_msgs)
 
 		elif director.action == "start drawing":#activating and deactivating right away draws glyphs rather than lines, this block is cleaning up activation in this event
-			if player.rtree.level < 1: message("You don't know how to draw glyphs.", libtcod.light_red, game_msgs)
-			drawdir.drawinglist.remove(drawdir.active_drawing) #adding a glyph does not add a new drawing to drawdir, it just modifies one tile in the main body of another drawing
+			if gldir.player.rtree.level < 1: message("You don't know how to draw glyphs.", libtcod.light_red, gldir.game_msgs)
+			gldir.drawdir.drawinglist.remove(gldir.drawdir.active_drawing) #adding a glyph does not add a new drawing to drawdir, it just modifies one tile in the main body of another drawing
 			wanted_status = filter(lambda x: x.name == 'drawing', self.fighter.status) #little bit of copypasted code, but this way is more readable i think
 			wanted_status[0].terminate() #there can only be one drawing status online anyway - tying it to a single toggle key makes sure of it
 
-			playertile = gamemap[player.x][player.y] #just so it's easier to write and read - points to the tile the player is standing on
+			playertile = gamemap[gldir.player.x][gldir.player.y] #just so it's easier to write and read - points to the tile the player is standing on
 			if (playertile.special and playertile.special.name not in ['drawing', 'glyph']) or not playertile.special:
-				message('You can only draw a glyph on top of ritual lines.', libtcod.light_red,  game_msgs)
+				message('You can only draw a glyph on top of ritual lines.', libtcod.light_red,  gldir.game_msgs)
 				return 'didnt-take-turn'
 			else:
 				director.update(action = 'draw glyph')
@@ -1110,7 +1088,7 @@ class Player(GameObj):#player is inherited because it's easier since it has one 
 			wanted_status[0].stepfunction()
 			wanted_status[0].terminate() #there can only be one drawing status online anyway - tying it to a single toggle key makes sure of it
 
-			drawdir.active_drawing.concluded = True  #it's a closed loop together with the drawing status so there should be no problems
+			gldir.drawdir.active_drawing.concluded = True  #it's a closed loop together with the drawing status so there should be no problems
 			return 'didnt-take-turn'
 
 	def abl_staff_stance(self):
@@ -1118,14 +1096,14 @@ class Player(GameObj):#player is inherited because it's easier since it has one 
 		index = menu('Choose a staff stance.', choices, 20)
 		if index is not None:
 			for statusname in ['hammer staff stance', 'parry staff stance', 'spear staff stance']:
-				status = get_status_from_name(player, statusname)
+				status = get_status_from_name(gldir.player, statusname)
 				if status: status.terminate()
 			if index == 0: 
-				player.fighter.receive_status('hammer staff stance', 0)
+				gldir.player.fighter.receive_status('hammer staff stance', 0)
 			elif index == 1: 
-				player.fighter.receive_status('spear staff stance', 0)
+				gldir.player.fighter.receive_status('spear staff stance', 0)
 			elif index == 2: 
-				player.fighter.receive_status('parry staff stance', 0)
+				gldir.player.fighter.receive_status('parry staff stance', 0)
 		director.update(action = 'change staff stance', object_s = get_equipped_in_slot('main hand').owner)
 
 ###########################################################################################################3
@@ -1138,26 +1116,24 @@ class Player(GameObj):#player is inherited because it's easier since it has one 
 			self.act_points /= 2
 
 
-		fighterlist = filter(lambda x: x.fighter, objects)
+		fighterlist = filter(lambda x: x.fighter, gldir.game_objs)
 		fighterlist.remove(self)
 		for obj in fighterlist:
-			if libtcod.map_is_in_fov(fov_map,obj.x,obj.y): 
-				obj.fighter.energy += self.act_points
+			obj.fighter.energy += self.act_points
 
 		self.act_points = 0
 
 	def move_command(self,dx,dy):
-		global fov_recompute
 
 		x = self.x + dx
 		y = self.y + dy
 
 
 		if is_blocked(x, y): 
-			message("Can't move there.", libtcod.white, game_msgs)
+			message("Can't move there.", libtcod.white, gldir.game_msgs)
 			return 'didnt-take-turn'
 		self.move(dx,dy)
-		fov_recompute = True
+		gldir.fov_recompute = True
 
 	def attack_command(self,dx, dy):
 
@@ -1168,14 +1144,14 @@ class Player(GameObj):#player is inherited because it's easier since it has one 
 			if weapon.equiptype == 'polearm' or (weapon.equiptype == "staff" and get_status_from_name(self, 'spear staff stance')):
 				x = self.x + 2*dx
 				y = self.y + 2*dy
-				for obj in objects:
+				for obj in gldir.game_objs:
 					if obj.fighter and obj.x == x and obj.y == y:
 						target = obj
 						break
 
 		x = self.x + dx
 		y = self.y + dy
-		for obj in objects:
+		for obj in gldir.game_objs:
 			if obj.fighter and obj.x == x and obj.y == y:
 				target = obj
 				break
@@ -1190,7 +1166,7 @@ class Player(GameObj):#player is inherited because it's easier since it has one 
 	@property
 	def abilities(self):
 		abilitylist = []
-		for tree in (player.ctree, player.ttree, player.rtree, player.ptree):
+		for tree in (gldir.player.ctree, gldir.player.ttree, gldir.player.rtree, gldir.player.ptree):
 			for node in tree.nodetable:
 				if node.abilities != None and node.leveled:
 					abilitylist += node.abilities
@@ -1200,7 +1176,7 @@ class Player(GameObj):#player is inherited because it's easier since it has one 
 	@property
 	def cabilities(self):
 		abilitylist = []
-		for node in player.ctree.nodetable:
+		for node in gldir.player.ctree.nodetable:
 			if node.abilities != None and node.leveled:
 				abilitylist += node.abilities
 		self._abilities = abilitylist
@@ -1228,7 +1204,7 @@ class Player(GameObj):#player is inherited because it's easier since it has one 
 		if get_equipped_in_slot('main hand') and get_equipped_in_slot('main hand').equiptype == 'staff' and get_status_from_name(self, 'parry staff stance'):
 			dodge *= 2
 
-		eqdodge = sum([equip.dodge_bonus for equip in get_all_equipped(player)])
+		eqdodge = sum([equip.dodge_bonus for equip in get_all_equipped(gldir.player)])
 		dodge += eqdodge
 
 		return dodge
@@ -1241,11 +1217,11 @@ def tree_lvlup():
 		index = menu('Choose skill tree', options, SCREEN_WIDTH)
 		if index is None or index not in [0,1,2]: continue
 		elif index is 0:
-			if player.ctree.node_select(): break
+			if gldir.player.ctree.node_select(): break
 		elif index is 1:
-			if player.ttree.node_select(): break
+			if gldir.player.ttree.node_select(): break
 		elif index is 2:
-			if player.rtree.node_select(): break
+			if gldir.player.rtree.node_select(): break
 
 
 
@@ -1267,42 +1243,10 @@ def main_menu():
 			new_game()
 			play_game()
 		if choice == 1:  #load last game
-			try:
-				load_game()
-			except:
-				msgbox('\n No saved game to load.\n', 24)
-				continue
-			play_game()
+			new_game()
 		elif choice == 2:  #quit
 			break
 
-def save_game():
-	#open a new empty shelve (possibly overwriting an old one) to write the game data
-	file = shelve.open('savegame', 'n')
-	file['gamemap'] = gamemap
-	file['objects'] = objects
-	file['player_index'] = objects.index(player)  #index of player in objects list
-	file['game_msgs'] = game_msgs
-	file['game_state'] = game_state
-	file['dungeon_level'] = dungeon_level
-	file['stairs_index'] = objects.index(stairs)
-	file.close()
- 
-def load_game():
-	#open the previously saved shelve and load the game data
-	global gamemap, objects, player, game_msgs, game_state, dungeon_level, stairs
-
-	file = shelve.open('savegame', 'r')
-	gamemap = file['gamemap']
-	objects = file['objects']
-	player = objects[file['player_index']]  #get index of player in objects list and access it
-	game_msgs = file['game_msgs']
-	game_state = file['game_state']
-	dungeon_level = file['dungeon_level']
-	stairs = objects[file['stairs_index']]
-	file.close()
-
-	initialize_fov()
 
 def play_game():
 	global key, mouse
@@ -1313,7 +1257,7 @@ def play_game():
 
 	
 
-	render_all(fov_map, fov_recompute, objects, game_msgs, player, camera, panel, con, dungeon_level) 
+	render_all(gldir, camera, panel, con)
 	lovemessage = ['the game begins','some kind of lore goes here',"but for now its a placeholder","placeholder placeholder"]
 	textbox(lovemessage)
 
@@ -1321,7 +1265,7 @@ def play_game():
 
 
 		libtcod.console_flush() # draws the screen
-		for object in objects:
+		for object in gldir.game_objs:
 			object.clear()
 
 		check_lvlup()
@@ -1330,53 +1274,52 @@ def play_game():
 		libtcod.sys_check_for_event(libtcod.EVENT_KEY_PRESS,key,mouse)
 		
 
-		render_all(fov_map, fov_recompute, objects, game_msgs, player, camera, panel, con, dungeon_level)			
+		render_all(gldir, camera, panel, con)		
 
 		player_action = handle_keys()
 
 		graphical.render_effects() #render effects have to be here because effects depend on object locatons, leading to wrong-looking offsets
 
-		if game_state == 'playing' and player_action != 'didnt-take-turn':  # remember to have checks for timed buffs and things like that here, otherwise things will become shitty
-			player.speed_process()
-			for object in objects:
+		if gldir.game_state == 'playing' and player_action != 'didnt-take-turn':  # remember to have checks for timed buffs and things like that here, otherwise things will become shitty
+			gldir.player.speed_process()
+			for object in gldir.game_objs:
 				if object.fighter and len(object.fighter.status) > 0:
 					for stati in object.fighter.status: stati.activate()
 				if object.ai:
 					object.ai.take_turn()	
 
 		if player_action == 'exit':
-			save_game()
 			clear_game()
 			break
 
 def check_lvlup():
-	lvlup_xp = LEVEL_UP_BASE + (player.lvl * LEVEL_UP_FACTOR) #bug: dying in the same frame you level up
-	if player.fighter.xp >= lvlup_xp:
-		player.lvl += 1
-		player.fighter.xp -= lvlup_xp
-		message('Your battle skills grow stronger! You reached level ' + str(player.lvl) + '!', libtcod.yellow, game_msgs)
+	lvlup_xp = LEVEL_UP_BASE + (gldir.player.lvl * LEVEL_UP_FACTOR) #bug: dying in the same frame you level up
+	if gldir.player.fighter.xp >= lvlup_xp:
+		gldir.player.lvl += 1
+		gldir.player.fighter.xp -= lvlup_xp
+		message('Your battle skills grow stronger! You reached level ' + str(gldir.player.lvl) + '!', libtcod.yellow, gldir.game_msgs)
 
 		choice = None
 		while choice == None:  #keep asking until a choice is made
 			choice = menu('Level up! Choose a stat to raise:\n',
-				['Constitution (+20 HP, from ' + str(player.fighter.max_hp) + ')',
-				'Strength (+1 attack, from ' + str(player.fighter.power) + ')',
-				'Agility (+1 armor, from ' + str(player.fighter.armor) + ')'], LEVEL_SCREEN_WIDTH)
+				['Constitution (+20 HP, from ' + str(gldir.player.fighter.max_hp) + ')',
+				'Strength (+1 attack, from ' + str(gldir.player.fighter.power) + ')',
+				'Agility (+1 armor, from ' + str(gldir.player.fighter.armor) + ')'], LEVEL_SCREEN_WIDTH)
 
 		if choice == 0:
-			player.fighter.max_hp += 20
-			player.fighter.hp += 20
+			gldir.player.fighter.max_hp += 20
+			gldir.player.fighter.hp += 20
 		elif choice == 1:
 			pass
 		elif choice == 2:
-			player.fighter.armor += 1
+			gldir.player.fighter.armor += 1
 
 def get_equipped_in_slot(slot):  #returns the equipment in a slot, or None if it's empty
 	if slot == 'off hand':                     #
 		wep = get_equipped_in_slot('main hand')# twohander special case
 		if wep and wep.twohand: return wep      #
 
-	for obj in player.inventory:
+	for obj in gldir.player.inventory:
 		if obj.equipment and obj.equipment.slot == slot and obj.equipment.is_equipped:
 			return obj.equipment
 
@@ -1385,9 +1328,9 @@ def get_equipped_in_slot(slot):  #returns the equipment in a slot, or None if it
 
 
 def get_all_equipped(obj):  #returns a list of equipped items
-	if obj == player:
+	if obj is gldir.player:
 		equipped_list = []
-		for item in player.inventory:
+		for item in gldir.player.inventory:
 			if item.equipment and item.equipment.is_equipped:
 				equipped_list.append(item.equipment)
 		return equipped_list
@@ -1395,12 +1338,11 @@ def get_all_equipped(obj):  #returns a list of equipped items
 		return []  #other objects have no equipment
 
 def next_level():
-	global dungeon_level
-	dungeon_level += 1
-	message('You descend further into the bowels of the earth.', libtcod.dark_violet, game_msgs)
+	gldir.dungeon_level += 1
+	message('You descend further into the bowels of the earth.', libtcod.dark_violet, gldir.game_msgs)
 	make_map()
 	libtcod.console_clear(con)
-	drawdir.clear()
+	gldir.drawdir.clear()
 
 	initialize_fov()
 	
@@ -1414,59 +1356,59 @@ def handle_keys():
 		return 'exit' # exit game
 
 	#movement
-	if game_state == 'playing':
+	if gldir.game_state == 'playing':
 
 		if key.vk == libtcod.KEY_KP8 and not key.lctrl:
-			if player.move_command(0,-1): return 'didnt-take-turn'
+			if gldir.player.move_command(0,-1): return 'didnt-take-turn'
 
 		elif key.vk == libtcod.KEY_KP2 and not key.lctrl:
-			if player.move_command(0,1): return 'didnt-take-turn'
+			if gldir.player.move_command(0,1): return 'didnt-take-turn'
 
 		elif key.vk == libtcod.KEY_KP4 and not key.lctrl:
-			if player.move_command(-1,0): return 'didnt-take-turn'
+			if gldir.player.move_command(-1,0): return 'didnt-take-turn'
 
 		elif key.vk == libtcod.KEY_KP6 and not key.lctrl:
-			if player.move_command(1,0): return 'didnt-take-turn'
+			if gldir.player.move_command(1,0): return 'didnt-take-turn'
 
 		elif key.vk == libtcod.KEY_KP9 and not key.lctrl:
-			if player.move_command(1,-1): return 'didnt-take-turn'
+			if gldir.player.move_command(1,-1): return 'didnt-take-turn'
 
 		elif key.vk == libtcod.KEY_KP7 and not key.lctrl:
-			if player.move_command(-1,-1): return 'didnt-take-turn'
+			if gldir.player.move_command(-1,-1): return 'didnt-take-turn'
 
 		elif key.vk == libtcod.KEY_KP1 and not key.lctrl:
-			if player.move_command(-1,1): return 'didnt-take-turn'
+			if gldir.player.move_command(-1,1): return 'didnt-take-turn'
 
 		elif key.vk == libtcod.KEY_KP3 and not key.lctrl:
-			if player.move_command(1,1): return 'didnt-take-turn'
+			if gldir.player.move_command(1,1): return 'didnt-take-turn'
 
 		elif key.vk == libtcod.KEY_KP5 and not key.lctrl:
 			director.update(action = 'wait')
 
 
 		elif key.vk == libtcod.KEY_KP8 and key.lctrl:
-			player.attack_command(0,-1)
+			gldir.player.attack_command(0,-1)
 
 		elif key.vk == libtcod.KEY_KP2 and key.lctrl:
-			player.attack_command(0,1)
+			gldir.player.attack_command(0,1)
 
 		elif key.vk == libtcod.KEY_KP4 and key.lctrl:
-			player.attack_command(-1,0)
+			gldir.player.attack_command(-1,0)
 
 		elif key.vk == libtcod.KEY_KP6 and key.lctrl:
-			player.attack_command(1,0)
+			gldir.player.attack_command(1,0)
 
 		elif key.vk == libtcod.KEY_KP9 and key.lctrl:
-			player.attack_command(1,-1)
+			gldir.player.attack_command(1,-1)
 
 		elif key.vk == libtcod.KEY_KP7 and key.lctrl:
-			player.attack_command(-1,-1)
+			gldir.player.attack_command(-1,-1)
 
 		elif key.vk == libtcod.KEY_KP1 and key.lctrl:
-			player.attack_command(-1,1)
+			gldir.player.attack_command(-1,1)
 
 		elif key.vk == libtcod.KEY_KP3 and key.lctrl:
-			player.attack_command(1,1)
+			gldir.player.attack_command(1,1)
 
 		elif key.vk == libtcod.KEY_KP5 and key.lctrl:
 			director.update(action = 'wait')
@@ -1474,8 +1416,8 @@ def handle_keys():
 
 
 		elif key_char == 'g': #(g)et
-				for obj in objects:
-					if obj.x == player.x and obj.y == player.y and obj.item:
+				for obj in gldir.game_objs:
+					if obj.x == gldir.player.x and obj.y == gldir.player.y and obj.item:
 						if obj.item.pick_up(): pass
 						else: return 'didnt-take-turn'
 
@@ -1489,19 +1431,19 @@ def handle_keys():
 
 		elif key_char == 'd' and key.shift:#(D)raw
 
-			if player.abl_toggle_drawing() == "didnt-take-turn": return 'didnt-take-turn'
+			if gldir.player.abl_toggle_drawing() == "didnt-take-turn": return 'didnt-take-turn'
 
 		elif key_char == 'e' and key.shift:#(E)voke drawing:
-			if player.rtree.level < 1:
-				message("You don't know how to evoke.", libtcod.white, game_msgs)
+			if gldir.player.rtree.level < 1:
+				message("You don't know how to evoke.", libtcod.white, gldir.game_msgs)
 				return 'didnt-take-turn'
 
-			if drawdir.drawinglist == []:
-				message("There's nothing to evoke right now.", libtcod.white, game_msgs)
+			if gldir.drawdir.drawinglist == []:
+				message("There's nothing to evoke right now.", libtcod.white, gldir.game_msgs)
 				return 'didnt-take-turn'
 
-			if 'drawing' in [stati.name for stati in player.fighter.status]:
-				message("Can't evoke while still drawing.", libtcod.white, game_msgs)
+			if 'drawing' in [stati.name for stati in gldir.player.fighter.status]:
+				message("Can't evoke while still drawing.", libtcod.white, gldir.game_msgs)
 				return 'didnt-take-turn'
 
 			tx, ty = target_tile()
@@ -1512,7 +1454,7 @@ def handle_keys():
 				wanted_drawing = ttile.get_drawing()
 				wanted_drawing.evoke()
 			else:
-				message('Nothing to evoke there.', libtcod.white, game_msgs)
+				message('Nothing to evoke there.', libtcod.white, gldir.game_msgs)
 				return 'didnt-take-turn'
 
 
@@ -1559,19 +1501,19 @@ def handle_keys():
 
 		else:
 			if key_char == '.' and key.shift: #>
-				if player.x == stairs.x and player.y == stairs.y:
+				if gldir.player.x == stairs.x and gldir.player.y == stairs.y:
 					next_level()
 
 				else:
-					message("You can't go down here!", libtcod.white, game_msgs)
+					message("You can't go down here!", libtcod.white, gldir.game_msgs)
 
 
 			elif key_char == 's':
 				#show (c)haracter information
-				level_up_xp = LEVEL_UP_BASE + player.lvl * LEVEL_UP_FACTOR
-				msgbox('Character Information\n\nLevel: ' + str(player.lvl) + '\nExperience: ' + str(player.fighter.xp) +
-					'\nExperience to level up: ' + str(level_up_xp) + '\n\nMaximum HP: ' + str(player.fighter.max_hp) +
-					'\nAttack: ' + str(player.fighter.power) + '\nDefense: ' + str(player.fighter.armor), CHARACTER_SCREEN_WIDTH)
+				level_up_xp = LEVEL_UP_BASE + gldir.player.lvl * LEVEL_UP_FACTOR
+				msgbox('Character Information\n\nLevel: ' + str(gldir.player.lvl) + '\nExperience: ' + str(gldir.player.fighter.xp) +
+					'\nExperience to level up: ' + str(level_up_xp) + '\n\nMaximum HP: ' + str(gldir.player.fighter.max_hp) +
+					'\nAttack: ' + str(gldir.player.fighter.power) + '\nDefense: ' + str(gldir.player.fighter.armor), CHARACTER_SCREEN_WIDTH)
 
 
 			return 'didnt-take-turn'
@@ -1589,7 +1531,7 @@ def check_if_node_leveled(tree, node_s):
 			else: return True
 
 def ability_menu(): #returns ability name if ability goes through, None if its cancelled
-	ability_choices = [ability for ability in player.abilities]
+	ability_choices = [ability for ability in gldir.player.abilities]
 	if ability_choices != []:
 		choice = menu('Choose an ability.', ability_choices, SCREEN_WIDTH/2)
 	else: 
@@ -1605,18 +1547,18 @@ def ability_menu(): #returns ability name if ability goes through, None if its c
 def activate_ability(abil_name): #returns abil name if not cancelled, None otherwise
 	completed = False
 	if abil_name == 'kicklaunch':
-		if player.abl_kicklaunch(): completed = True
+		if gldir.player.abl_kicklaunch(): completed = True
 	elif abil_name == 'sprint':
-		if player.abl_sprint(): completed = True
+		if gldir.player.abl_sprint(): completed = True
 	elif abil_name == 'fling trinket':
-		if player.abl_fling_trinket(): completed = True
+		if gldir.player.abl_fling_trinket(): completed = True
 	elif abil_name == 'consume trinket':
-		if player.abl_consume_trinket(): completed = True
+		if gldir.player.abl_consume_trinket(): completed = True
 
 	if completed == True: return abil_name
 
 def glyph_draw_menu():
-	glyph_choices = catalog.get_glyphs(player.rtree.level)
+	glyph_choices = catalog.get_glyphs(gldir.player.rtree.level)
 	dglyph_choices = map(lambda x: x.capitalize(), glyph_choices)
 	choice = menu('Choose a glyph to draw.', dglyph_choices, SCREEN_WIDTH/2)
 
@@ -1628,11 +1570,11 @@ def draw_glyph(glyphname):
 	if glyphname == 'damage glyph': glyph = 264
 	if glyphname == 'damage over time glyph': glyph = 265 #when adding new characters remember to change it in the custom_font libtcod function
 	if glyphname == 'slow glyph': glyph = 266
-	glyphtile = gamemap[player.x][player.y]
+	glyphtile = gamemap[gldir.player.x][gldir.player.y]
 	if glyphtile.special and glyphtile.special.name == 'drawing':
 		glyphtile.special.char = glyph
 		glyphtile.special.name = 'glyph'
-	else: message("You can't draw a glyph here.", libtcod.red, game_msgs)
+	else: message("You can't draw a glyph here.", libtcod.red, gldir.game_msgs)
 
 
 
@@ -1641,14 +1583,14 @@ def draw_glyph(glyphname):
 
 
 def make_map():
-	global gamemap, objects, stairs, player
+	global gamemap, director, stairs
 
 	gamemap = [[Tile(True, x=x, y=y)
 		for y in range(MAP_HEIGHT)]
 			for x in range(MAP_WIDTH)]
 
 	rooms = []
-	objects = [player]
+	gldir.game_objs.append(gldir.player)
 	num_rooms = 0
 	for r in range(MAX_ROOMS):
 		w = libtcod.random_get_int(0, ROOM_MIN_SIZE, ROOM_MAX_SIZE)
@@ -1671,8 +1613,8 @@ def make_map():
 			(new_x,new_y) = new_room.center()
 
 			if num_rooms == 0:
-				player.x = new_x
-				player.y = new_y
+				gldir.player.x = new_x
+				gldir.player.y = new_y
 
 			else:
 				(prev_x,prev_y) = rooms[num_rooms-1].center()
@@ -1686,7 +1628,7 @@ def make_map():
 			rooms.append(new_room)
 			num_rooms += 1
 	stairs = GameObj(new_x,new_y,'>', 'stairs', libtcod.white, ignore_fov = True)
-	objects.append(stairs)
+	gldir.game_objs.append(stairs)
 	stairs.send_to_back()
 
 	place_items_in_level()
@@ -1730,16 +1672,16 @@ def get_random_item_of_depthlevel(desired_depth = 1):
 	return choice # returns the item OBJECT (ITEM.OWNER)
 
 def place_items_in_level():
-	global objects
+	global gldir
 	i = 0
-	items_to_place = create_item_rngtable(dungeon_level)
+	items_to_place = create_item_rngtable(gldir.dungeon_level)
 	while i < len(items_to_place):
 		x = libtcod.random_get_int(0, 1, MAP_WIDTH-1)
 		y = libtcod.random_get_int(0, 1, MAP_HEIGHT-1)
 		if not is_blocked(x,y):
 			items_to_place[i].x = x
 			items_to_place[i].y = y
-			objects.insert(0, items_to_place[i])
+			gldir.game_objs.insert(0, items_to_place[i])
 			i += 1
 
 def get_full_item_list():
@@ -1779,11 +1721,11 @@ def create_v_tunnel(y1,y2,x):
 		gamemap[x][y].block_sight = False
 
 def check_colorkeeper(name):
-	global colorkeeper
-	if name not in colorkeeper:
+	global director
+	if name not in gldir.colorkeeper:
 		colorchoice = libtcod.Color(libtcod.random_get_int(0,30,255),libtcod.random_get_int(0,30,255),libtcod.random_get_int(0,30,255))
-		colorkeeper[name] = colorchoice
-	else: colorchoice = colorkeeper[name]
+		gldir.colorkeeper[name] = colorchoice
+	else: colorchoice = gldir.colorkeeper[name]
 	return colorchoice
 
 
@@ -1841,12 +1783,10 @@ def generate_tile(name, x, y):
 def generate_monster(name, x, y):
 	if name == 'starved mutt':
 		fighter_component = Fighter(hp = 30, armor = 0, power = 4, xp = 10, death_function = monster_death, depth_level = 1)
-		ai_component = DumbMonster()
-		monster = GameObj(x, y, 'd', name, libtcod.lighter_red, blocks = True, fighter = fighter_component, ai = ai_component)
+		monster = GameObj(x, y, 'd', name, libtcod.lighter_red, blocks = True, fighter = fighter_component)
 	elif name == 'mad hermit':
 		fighter_component = Fighter(hp = 15, armor = 1, power = 6, xp = 25, death_function = monster_death, depth_level = 1)
-		ai_component = DumbMonster()
-		monster = GameObj(x, y, 'h', name, libtcod.lighter_red, blocks = True, fighter = fighter_component, ai = ai_component)
+		monster = GameObj(x, y, 'h', name, libtcod.lighter_red, blocks = True, fighter = fighter_component)
 
 	return monster
 
@@ -1863,7 +1803,7 @@ def place_objects(room):
 			choice = random_choice(monster_chance)
 			monster = generate_monster(choice,x,y)
 	###################### MONSTER RNG SHIT #######################
-			objects.append(monster)
+			gldir.game_objs.append(monster)
 
 	x = libtcod.random_get_int(0, room.x1+1, room.x2-1) #+1 -1 because it has to exclude the walls
 	y = libtcod.random_get_int(0, room.y1+1, room.y2-1)
@@ -1872,7 +1812,7 @@ def is_blocked(x,y):
 	if gamemap[x][y].blocked:
 		return True
 	
-	for obj in objects:
+	for obj in gldir.game_objs:
 		if obj.blocks and obj.x == x and obj.y == y:
 			return True
 
@@ -1881,15 +1821,15 @@ def is_blocked(x,y):
 
 def player_death(player):
 
-	global game_state
-	message('You died', libtcod.white, game_msgs)
-	game_state = 'dead'
+	global gldir
+	message('You died', libtcod.white, gldir.game_msgs)
+	gldir.game_state = 'dead'
 
-	player.char = '%'
-	player.color = libtcod.dark_red
+	gldir.player.char = '%'
+	gldir.player.color = libtcod.dark_red
 
 def monster_death(monster):
-	message('The ' + monster.name + ' dies, gurgling blood.', libtcod.white, game_msgs)
+	message('The ' + monster.name + ' dies, gurgling blood.', libtcod.white, gldir.game_msgs)
 	monster.char = '%'
 	monster.blocks = False
 	monster.fighter = None
@@ -1900,18 +1840,18 @@ def monster_death(monster):
 
 
 def initialize_fov():
-	global fov_recompute, fov_map
-	fov_recompute = True
-	fov_map = libtcod.map_new(MAP_WIDTH, MAP_HEIGHT)
+	global gldir
+	gldir.fov_recompute = True
+	gldir.fov_map = libtcod.map_new(MAP_WIDTH, MAP_HEIGHT)
 
 	for y in range(MAP_HEIGHT):
 		for x in range(MAP_WIDTH):
-			libtcod.map_set_properties(fov_map, x, y, not gamemap[x][y].block_sight, not gamemap[x][y].blocked)
+			libtcod.map_set_properties(gldir.fov_map, x, y, not gamemap[x][y].block_sight, not gamemap[x][y].blocked)
 
 
 
 def inventory_menu(header, itemtype = None):
-	inv = filter(lambda x: not x.equipment or x.equipment not in get_all_equipped(player), player.inventory)
+	inv = filter(lambda x: not x.equipment or x.equipment not in get_all_equipped(gldir.player), gldir.player.inventory)
 
 	if itemtype:
 		inv = filter(lambda x: x.item.itemtype == itemtype, inv)
@@ -1931,8 +1871,8 @@ def inventory_menu(header, itemtype = None):
 def action_equip_menu(header):
 	options = []
 	output_item = []
-	inv = filter(lambda x: x.equipment != None, player.inventory)
-	inv = filter(lambda x: x.equipment not in get_all_equipped(player), inv)
+	inv = filter(lambda x: x.equipment != None, gldir.player.inventory)
+	inv = filter(lambda x: x.equipment not in get_all_equipped(gldir.player), inv)
 	for item in inv:
 		options.append(item.item.dname)
 		output_item.append(item)
@@ -2043,16 +1983,16 @@ def msgbox(message, width=50):
 
 
 def target_tile(max_range = None):
-	global objects
+	global director
 
-	message('Choose a target - ESC to cancel.', libtcod.red, game_msgs)
-	targeter = GameObj(player.x, player.y, '+', 'targeter', libtcod.red,ignore_fov = True)
-	objects.append(targeter)
+	message('Choose a target - ESC to cancel.', libtcod.red, gldir.game_msgs)
+	targeter = GameObj(gldir.player.x, gldir.player.y, '+', 'targeter', libtcod.red,ignore_fov = True)
+	gldir.game_objs.append(targeter)
 	
 
 	while True:
 
-		render_all(fov_map, fov_recompute, objects, game_msgs, player, camera, panel, con, dungeon_level)
+		render_all(gldir, camera, panel, con)
 		targeter.send_to_front()
 		targeter.clear()
 		libtcod.console_flush()
@@ -2087,19 +2027,19 @@ def target_tile(max_range = None):
 		elif keyb.vk == libtcod.KEY_KP5:
 			continue
 
-		elif (keyb.vk == libtcod.KEY_ENTER and libtcod.map_is_in_fov(fov_map, targeter.x, targeter.y) and (max_range is None or player.distance_to(targeter) <= max_range)):
+		elif (keyb.vk == libtcod.KEY_ENTER and libtcod.map_is_in_fov(gldir.fov_map, targeter.x, targeter.y) and (max_range is None or gldir.player.distance_to(targeter) <= max_range)):
 
 			targeter.clear()
-			objects.remove(targeter)
+			gldir.game_objs.remove(targeter)
 			return targeter.x, targeter.y
 
-		elif (keyb.vk == libtcod.KEY_ENTER and not libtcod.map_is_in_fov(fov_map, targeter.x, targeter.y)):
-			message('You cannot target there!', libtcod.grey, game_msgs)
+		elif (keyb.vk == libtcod.KEY_ENTER and not libtcod.map_is_in_fov(gldir.fov_map, targeter.x, targeter.y)):
+			message('You cannot target there!', libtcod.grey, gldir.game_msgs)
 
 
 		else:
 			targeter.clear()
-			objects.remove(targeter)
+			gldir.game_objs.remove(targeter)
 			return None, None
 
 def closest_monster(max_range):
@@ -2107,10 +2047,10 @@ def closest_monster(max_range):
 	closest_enemy = None
 	closest_dist = max_range + 1  #start with (slightly more than) maximum
 
-	for obj in objects:
-		if obj.fighter and not obj == player and libtcod.map_is_in_fov(fov_map, obj.x, obj.y):
+	for obj in gldir.game_objs:
+		if obj.fighter and not obj == gldir.player and libtcod.map_is_in_fov(gldir.fov_map, obj.x, obj.y):
 		#calculate distance between this object and the player
-			dist = player.distance_to(obj)
+			dist = gldir.player.distance_to(obj)
 			if dist < closest_dist:  #it's closer, so remember it
 				closest_enemy = obj
 				closest_dist = dist
@@ -2118,8 +2058,8 @@ def closest_monster(max_range):
 
 def random_adj_target():
 	adjacents = []
-	for obj in objects:
-		if obj.distance_to(player) < 2 and obj.fighter and not obj == player: adjacents.append(obj)
+	for obj in gldir.game_objs:
+		if obj.distance_to(gldir.player) < 2 and obj.fighter and not obj == gldir.player: adjacents.append(obj)
 
 	if adjacents == []: 
 		return
@@ -2138,42 +2078,37 @@ def target_monster(max_range=None):
 			return
 
 	
-		for obj in objects:
-			if obj.x == x and obj.y == y and obj.fighter and obj != player:
+		for obj in gldir.game_objs:
+			if obj.x == x and obj.y == y and obj.fighter and obj != gldir.player:
 				return obj
 
-		message('Nothing to target there!', libtcod.grey, game_msgs)
+		message('Nothing to target there!', libtcod.grey, gldir.game_msgs)
 
 def clear_game():
-	global objects
+	global director
 
-	for obj in objects:
+	for obj in gldir.game_objs:
 		obj.clear()
-		objects.remove(obj)
-	for item in player.inventory:
-		player.inventory.remove(item)
+		gldir.game_objs.remove(obj)
+	for item in gldir.player.inventory:
+		gldir.player.inventory.remove(item)
 
 	clear_screen()
 
 def new_game():
-	global player, game_msgs, game_state, dungeon_level, namekeeper, colorkeeper, camera, director, drawdir
+	global camera, director, gldir
 	
-	dungeon_level = 1
+	
 	director = PlayerActionReport()
-	drawdir = DrawingDir()
-	namekeeper = {}
-	colorkeeper = {}
-	game_msgs = []
+
 
 	make_map()
 
 	initialize_fov()
-	camera = Camera(player = player, fov_map = fov_map, gamemap = gamemap, con = con)
-
-	game_state = 'playing'
+	camera = Camera(player = gldir.player, fov_map = gldir.fov_map, gamemap = gamemap, con = con)
 
 	item = generate_item('sharpened stick', 0, 0)
-	player.inventory.append(item)
+	gldir.player.inventory.append(item)
 
 
 	
@@ -2190,12 +2125,12 @@ def push(origin, target, distance):#only usable for 1 tile distance between targ
 		return distance
 
 def pot_heal():
-	if player.fighter.hp == player.fighter.max_hp:
-		message('You are at full health already!', libtcod.white, game_msgs)
+	if gldir.player.fighter.hp == gldir.player.fighter.max_hp:
+		message('You are at full health already!', libtcod.white, gldir.game_msgs)
 		return 'cancelled'
 
-	message('Your wounds start to feel better.', libtcod.white, game_msgs)
-	player.fighter.heal(POTHEAL_AMOUNT)
+	message('Your wounds start to feel better.', libtcod.white, gldir.game_msgs)
+	gldir.player.fighter.heal(POTHEAL_AMOUNT)
 
 # def draw_laser(origin, end, char, color): #origin and end must be GameObj(or otherwise also have camx, camy attributes)
 # 	line = graphical.createline(origin, end)
@@ -2218,8 +2153,7 @@ def consumable_pipegun():
 	if monster is None:
 		return 'cancelled'
 	else:
-		message('The slug explodes out of the flimsy gun with a loud thunder and strikes the ' + monster.name + '! The damage is '+ str(LIGHTNING_DAMAGE) + ' hit points.', libtcod.light_blue, game_msgs)
-		# draw_laser(player, monster, graphical.determine_projchar(player, monster), libtcod.light_blue)
+		message('The slug explodes out of the flimsy gun with a loud thunder and strikes the ' + monster.name + '! The damage is '+ str(LIGHTNING_DAMAGE) + ' hit points.', libtcod.light_blue, gldir.game_msgs)
 		line = graphical.LineHandler(player, monster, libtcod.light_blue)
 		# lineffect.draw(libtcod.light_blue) #it's in the init method now, not sure if i should keep it there
 
@@ -2236,26 +2170,26 @@ def consumable_crudenade():
 	x, y = target_tile()
 	if x is None: return 'cancelled'
 
-	message('The grenade explodes, spraying everything within ' + str(FIREBALL_RADIUS) + ' tiles with shrapnel!', libtcod.orange, game_msgs)
+	message('The grenade explodes, spraying everything within ' + str(FIREBALL_RADIUS) + ' tiles with shrapnel!', libtcod.orange, gldir.game_msgs)
 
-	for obj in objects:  #damage every fighter in range, including the player
+	for obj in gldir.game_objs:  #damage every fighter in range, including the player
 		if obj.distance(x, y) <= FIREBALL_RADIUS and obj.fighter:
-			if libtcod.map_is_in_fov(fov_map, obj.x, obj.y): message('The ' + obj.name + ' gets burned for ' + str(FIREBALL_DAMAGE) + ' hit points.', libtcod.orange, game_msgs)
+			if libtcod.map_is_in_fov(gldir.fov_map, obj.x, obj.y): message('The ' + obj.name + ' gets burned for ' + str(FIREBALL_DAMAGE) + ' hit points.', libtcod.orange, gldir.game_msgs)
 			obj.fighter.take_damage(FIREBALL_DAMAGE)
 
 
 def pass_node_requirements(node):
 	if node == 'shield focus':
-		if player.ctree.level >= 1: return True
+		if gldir.player.ctree.level >= 1: return True
 	else: return False
 
 def get_multiattack_number():
 	attackn = 0
-	for equip in get_all_equipped(player):
+	for equip in get_all_equipped(gldir.player):
 		for enchant in equip.special.enchantlist: 
 			if enchant.name == 'multiattack': attackn += enchant.value
 
-	attackn *= player.stats['agility']/5
+	attackn *= gldir.player.stats['agility']/5
 	attackn += 1
 ######################
 	if uniform(math.floor(attackn), math.ceil(attackn)) > attackn:#
@@ -2271,16 +2205,16 @@ def drawing_function(self):
 		prevtile = None
 		if target_tile.special and target_tile.special.name in ['drawing', 'glyph']: #drawing on top of another drawing
 			prevtile = target_tile.special.char
-			if target_tile not in drawdir.active_drawing.drawntile_list: #drawing over a drawing that is "concluded" ie is already drawn (toggled off)
+			if target_tile not in gldir.drawdir.active_drawing.drawntile_list: #drawing over a drawing that is "concluded" ie is already drawn (toggled off)
 				inactive_drawing = target_tile.get_drawing()
-				drawdir.active_drawing.merge(inactive_drawing)
+				gldir.drawdir.active_drawing.merge(inactive_drawing)
 	
 		character = determine_drawchar(prevtile)
 		drawntile = SpTile(name = 'drawing', char = character, foreground = libtcod.white)
 
 		if not gamemap[x][y].special or (gamemap[x][y].special and gamemap[x][y].special.name == 'drawing'):
 			gamemap[x][y].special = drawntile
-			drawing = drawdir.active_drawing
+			drawing = gldir.drawdir.active_drawing
 			drawing.add_drawntile(gamemap[x][y])
 
 

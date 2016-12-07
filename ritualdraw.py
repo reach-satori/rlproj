@@ -6,16 +6,16 @@ from messages import *
 
 
 class RitualDraw(object): #each drawing main body is represented by this
-	def __init__(self, originx, originy, player, gamemap, objects, drawdir, game_msgs):
+	def __init__(self, originx, originy, gamemap, gldir):
 		self.length = 1
 		self.originx = originx
 		self.originy = originy
-		self.player = player
+		self.player = gldir.player
 		self.gamemap = gamemap
-		self.drawdir = drawdir
-		self.objects = objects
+		self.drawdir = gldir.drawdir
+		self.objects = gldir.game_objs
 		self.drawntile_list = []
-		self.game_msgs = game_msgs
+		self.game_msgs = gldir.game_msgs
 		self.concluded = False
 		self.spent = False
 
@@ -87,45 +87,13 @@ class RitualDraw(object): #each drawing main body is represented by this
 
 	def get_affected(self):
 		shape = self.determine_shape()
-
+		tilecoords = map(lambda tile: (tile.x, tile.y), self.get_affected_tiles())
 		affected = []
-		if shape in ['aoe cross', 'focus cross']: center = self.get_center()
-
-		if shape == 'focus cross' and center == None:
-			for tile in self.drawntile_list:
-				if self.gamemap[tile.x+1][tile.y] in self.drawntile_list and self.gamemap[tile.x][tile.y+1] in self.drawntile_list:
-					center = tile # not really center, this is some fuckery that had to be solved with X crosses involving even numbers
-					break  #but i dont feel like explaining it all so whatever
-
-			for obj in self.objects:
-				if obj.fighter and (obj.x, obj.y) in [(center.x, center.y),(center.x+1, center.y),(center.x, center.y+1),(center.x+1, center.y+1)]:
-					affected.append(obj)
-
-		elif shape == 'focus cross':
-			for obj in self.objects:
-					if obj.fighter and obj.distance_to(center) < 2: 
-						affected.append(obj)
-
-		elif shape == 'aoe cross':
-			size = (len(self.drawntile_list) - 1)/4 #size is the length of each "arm" on the cross
-			for obj in self.objects:
-				if obj.fighter and obj.distance_to(center) <= size: 
-					affected.append(obj)
-
-		elif shape == 'linear':
-			affected_coords = [(tile.x, tile.y) for tile in self.drawntile_list]
-			for obj in self.objects:
-				if obj.fighter and (obj.x, obj.y) in affected_coords:
-					affected.append(obj)
-
-		elif shape == 'enclosed':
-			enclosed_coords = enclosed_space_processing(self.drawntile_list)
-			line_coords = [(tile.x, tile.y) for tile in self.drawntile_list]
-			for obj in self.objects:
-				if obj.fighter and ((obj.x, obj.y) in enclosed_coords or (obj.x, obj.y) in line_coords):
-					affected.append(obj)
+		for obj in self.objects:
+			if (obj.x, obj.y) in tilecoords: affected.append(obj)
 
 		return affected
+
 
 	def get_affected_tiles(self):
 		shape = self.determine_shape()
@@ -181,11 +149,9 @@ class RitualDraw(object): #each drawing main body is represented by this
 
 
 	def diamond_test(self):
+		w, h = self.get_dimensions()
 		all_x = map(lambda tile: tile.x, self.drawntile_list)
 		all_y = map(lambda tile: tile.y, self.drawntile_list)
-		w = max(all_x) - min(all_x)
-		h = max(all_y) - min(all_y)
-
 		if w != h: return False
 		if w % 2 != 0: return False
 
@@ -203,11 +169,9 @@ class RitualDraw(object): #each drawing main body is represented by this
 		return set(full_diamondtiles) == set(self.drawntile_list)
 
 	def focus_cross_test(self): #creates a focus cross (X) from the bounding box and tests if the actual drawing is the exact same
+		w, h = self.get_dimensions()
 		all_x = map(lambda tile: tile.x, self.drawntile_list)
 		all_y = map(lambda tile: tile.y, self.drawntile_list)
-		w = max(all_x) - min(all_x)
-		h = max(all_y) - min(all_y)
-
 		if w != h: return False
 
 		boundingbox = Rect(min(all_x), min(all_y), w, h)
@@ -221,11 +185,9 @@ class RitualDraw(object): #each drawing main body is represented by this
 
 
 	def aoe_cross_test(self):
+		w, h = self.get_dimensions()
 		all_x = map(lambda tile: tile.x, self.drawntile_list)
 		all_y = map(lambda tile: tile.y, self.drawntile_list)
-		w = max(all_x) - min(all_x)
-		h = max(all_y) - min(all_y)
-
 		if w != h: return False
 		if w % 2 != 0: return False
 
@@ -244,30 +206,28 @@ class RitualDraw(object): #each drawing main body is represented by this
 		aoe_cross = self.aoe_cross_test()
 		focus_cross = self.focus_cross_test()
 		diamond = self.diamond_test()
-		nonglyphs = filter(lambda x: x.special.name == 'drawing', self.drawntile_list)
-		charlist = map(lambda x: x.special.char, nonglyphs)
 
-		print aoe_cross, focus_cross, diamond
 		if aoe_cross == True and focus_cross == False and diamond == False: return 'aoe cross'
 		elif aoe_cross == False and focus_cross == False and diamond == True: return 'diamond'
 		elif aoe_cross == False and focus_cross == True and diamond == False: return 'focus cross'
 
 		enclosed_coords = enclosed_space_processing(self.drawntile_list)
+
 		if not enclosed_coords: return 'linear'
 		else: return 'enclosed' 
 		
 
 			
-	def merge(self, inactive_drawing):
+	def merge(self, other_drawing):
 
-		duplicates_removed = filter(lambda x: x not in self.drawntile_list, inactive_drawing.drawntile_list)
+		duplicates_removed = filter(lambda x: x not in self.drawntile_list, other_drawing.drawntile_list)
 		self.drawntile_list += duplicates_removed
-		self.drawdir.drawinglist.remove(inactive_drawing)
+		self.drawdir.drawinglist.remove(other_drawing)
 
 	def get_dimensions(self):
 		xcoords = map(lambda tile: tile.x, self.drawntile_list)
 		ycoords = map(lambda tile: tile.y, self.drawntile_list)
-		height = (max(ycoords) - min(ycoords)) + 1
-		width = (max(xcoords) - min(xcoords)) + 1
+		height = (max(ycoords) - min(ycoords))
+		width = (max(xcoords) - min(xcoords))
 
 		return width, height

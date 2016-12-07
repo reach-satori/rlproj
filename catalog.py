@@ -16,6 +16,8 @@ SLOTLIST = ['head',
 FULL_STATUSEFFECTLIST = ['maim']
 
 THROW_ITEMS = []
+FULL_MONSTERLIST = ['starved mutt',
+					'mad hermit']
 
 
 FULL_INAMELIST = ['healing salve', 

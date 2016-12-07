@@ -25,6 +25,8 @@ class Point:
 		self.x = x
 		self.y = y
 
+def obj_to_point(obj):
+	return Point(int(obj.x), int(obj.y))
 
 def distance_between(p1, p2): #p1 p2 points
 	dx = p1.x - p2.x

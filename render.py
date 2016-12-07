@@ -106,19 +106,19 @@ class Camera(object):
 
 
 
-def render_all(fov_map, fov_recompute, objects, game_msgs, player, camera, panel, con, dungeon_level):#globals used: fov_map, fov_recompute, objects, game_msgs, player, camera, panel, con
+def render_all(gldir, camera, panel, con):
 
-	if fov_recompute:
-		fov_recompute = False
-		libtcod.map_compute_fov(fov_map, player.x, player.y, TORCH_RADIUS, FOV_LIGHT_WALLS, FOV_ALGO)
+	if gldir.fov_recompute:
+		gldir.fov_recompute = False
+		libtcod.map_compute_fov(gldir.fov_map, gldir.player.x, gldir.player.y, TORCH_RADIUS, FOV_LIGHT_WALLS, FOV_ALGO)
 				
 	camera.camera_render()
 
-	for obj in objects:
+	for obj in gldir.game_objs:
 		if obj.in_camera(): obj.draw()
 
-	player.draw()
-	for obj in objects:
+	gldir.player.draw()
+	for obj in gldir.game_objs:
 		if obj.name == 'targeter': obj.draw()
 
 	#blits the content of the 'con' console to the root console
@@ -127,13 +127,13 @@ def render_all(fov_map, fov_recompute, objects, game_msgs, player, camera, panel
 	libtcod.console_clear(panel)
 	#print game messages, one line at a time
 	y = 1
-	for (line, color) in game_msgs:
+	for (line, color) in gldir.game_msgs:
 		libtcod.console_set_default_foreground(panel,color)
 		libtcod.console_print_ex(panel,MSG_X, y, libtcod.BKGND_NONE, libtcod. LEFT, line)
 		y += 1
 
-	render_bar(1, 1, BAR_WIDTH, 'Health', player.fighter.hp, player.fighter.max_hp, libtcod.dark_red, libtcod.darkest_red, panel) # display health
-	libtcod.console_print_ex(panel, 1, 3, libtcod.BKGND_NONE, libtcod.LEFT, 'Dungeon level ' + str(dungeon_level))  #display dungeon level
+	render_bar(1, 1, BAR_WIDTH, 'Health', gldir.player.fighter.hp, gldir.player.fighter.max_hp, libtcod.dark_red, libtcod.darkest_red, panel) # display health
+	libtcod.console_print_ex(panel, 1, 3, libtcod.BKGND_NONE, libtcod.LEFT, 'Dungeon level ' + str(gldir.dungeon_level))  #display dungeon level
 
 	
 	#blits the content of the 'panel' console to the root console

@@ -1,13 +1,10 @@
 from math import pi, acos, hypot, ceil, sqrt
 import libtcodpy as libtcod
+from utility import *
 
 
 activeeffects = []
 
-class Point:
-	def __init__(self, x, y):
-		self.x = x
-		self.y = y
 
 class EffectCon(object):
 	def __init__(self, width, height, duration = 0):
@@ -21,7 +18,7 @@ class FloatingText(EffectCon):
 	def __init__(self, origin, text, color, duration = 8):
 		width = len(text)
 		height = 6
-		EffectCon.__init__(self, width, height, duration) #duration in frames?? not sure how this is gonna work
+		EffectCon.__init__(self, width, height, duration) #duration in frames - rendered in the 
 		libtcod.console_set_default_foreground(self.console, color)
 
 		self.text = text.upper() + '!'
@@ -87,7 +84,7 @@ class PlainAreaEffect(EffectCon):
 					libtcod.console_set_char_background(self.console, x, y, self.colormap[self.maxduration - self.duration], flag=libtcod.BKGND_SET)
 				else:
 					libtcod.console_set_char_background(self.console, x, y, libtcod.silver, flag=libtcod.BKGND_SET)
-		libtcod.console_blit(self.console, 0, 0, 0, 0, 0, self.blitx, self.blity, 0, 0.5)
+		libtcod.console_blit(self.console, 0, 0, 0, 0, 0, self.blitx, self.blity, 0, 0.6)
 		self.duration -= 1
 
 
@@ -96,7 +93,7 @@ class PlainAreaEffect(EffectCon):
 
 
 class LineHandler(EffectCon):
-	def __init__(self, origin, end, color, char= '', sleep = 50, duration = 0):#origin and end must be GameObj, otherwise have camx, camy attributes
+	def __init__(self, origin, end, color, char= '', sleep = 50, duration = 1):#origin and end must be GameObj, otherwise have camx, camy attributes
 	# duration 0 means 1 frame draw
 		width, height = width_height_from_twopts(origin, end)
 		EffectCon.__init__(self, width, height, duration)
@@ -127,6 +124,7 @@ class LineHandler(EffectCon):
 		libtcod.console_flush()
 
 		libtcod.sys_sleep_milli(self.sleep)
+		self.duration -= 1
 
 def get_increments(*args):
 	if len(args) == 4:
@@ -155,8 +153,8 @@ def render_effects():
 	global activeeffects
 	for effect in activeeffects:
 		if effect.duration == 0: 
+			libtcod.console_delete(effect.console)
 			activeeffects.remove(effect)
-			# libtcod.console_delete(effect.console)
 		else: effect.draw()
 
 def console_from_twopts(origin, end):
@@ -214,8 +212,6 @@ def points_to_conpoints(p1, p2):
 		if newp.x == maxx: newp.x = dx  #
 		if newp.y == maxy: newp.y = dy  #
 #                                         #
-
-
 	return (newp1, newp2)
 
 
@@ -232,10 +228,10 @@ def determine_projchar(p1, p2):                         #
 	dy = lower.y - upper.y                              #                     |    /                 
 	dx = lower.x - upper.x                              #           idem      |   /          ___---t      
 	dist = hypot(dx, dy)                                #                     |  /     __----             
-	theta = acos(float(dx/dist)) * 180 / pi             #                     | / ___--     20 deg "-" 
+	theta = acos(float(dx/dist)) * 180 / pi             #                     | / ___--     25 deg "-" 
 #                                                       #     ________________o---________________t
 	if 160 <= theta < 180 or 0 < theta <= 20: return '-'#
-	elif 110 <= theta < 160: return '/'                 #    takes point with bigger y as lower than does acos to find angle
+	elif 110 <= theta < 160: return '/'                 #    takes point with bigger y as lower then does acos to find angle
 	elif 70 <= theta < 110: return '|'                  #
 	else: return '\\'                                   #
 #                                                       #
