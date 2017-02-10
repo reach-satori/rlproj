@@ -226,16 +226,18 @@ def get_glyphs(level):
 
 
 def get_node_description(node):
-	if node == 'heavy blades':
-		return ["KILL WITH BIG METAL STICK PLACEHOLDER PLACEHOLDER", 'test test test']
-	elif node == 'basic training':
-		return ['you can kill people better with your hands', 'Allows sprinting.']
-	elif node == 'shield focus':
-		return ["You become proficient in the use of shields.", 'All armour and dodge bonuses granted by shields are increased by 50%.']
-	elif node == 'basic ritualism':
-		return ['Basic training in The Mysteries', 'Allows use of trinkets and drawing of ritualistic sigils and glyphs.']
-	elif node == 'basic engineering':
-		return ['Basic training in the mysteries of rituals.', 'Allows use of trinkets, drawing of ritualistic sigils,', 'more stuff later']
+	descdict = {
+	'heavy blades':["KILL WITH BIG METAL STICK PLACEHOLDER PLACEHOLDER", 'test test test'],
+	'basic training':['you can kill people better with your hands', 'Allows sprinting.'],
+	'shield focus':["You become proficient in the use of shields.", 'All armour and dodge bonuses granted by shields are increased by 50%.'],
+	'basic ritualism':['Basic training in The Mysteries', 'Allows use of trinkets and drawing of ritualistic sigils and glyphs.'],
+	'basic engineering':['Basic training in the mysteries of machines', 'more stuff later']
+	}
+
+	description = descdict.get(node, 'default text')
+
+	return description
+
 
 def get_status_startfunction(status):
 	if status.name == 'maim':
@@ -264,29 +266,28 @@ def get_native_enchants(eqspecial): #must return list of EnchantModule objects
 		nativelist.append(EnchantModule(eqspecial, 'polearm defense', 0.25, True))
 
 	return nativelist
-
+##should replace these stupid if things with somethign better soon, dicts or something
 
 def ccreation_description(choice):
-	if choice == 'empty':
-		description = ' '
-	elif choice == 'human':
-		description = 'A race that once thrived, now driven to the brink of slow destruction. Mostly content to be farmers and traders, although some rare enterprising souls take the sword and venture out. placeholder placeholder placeholder placeholder'
-	elif choice == 'warden':
-		description = 'generic warrior barbarian, at least until i think about the lore a wee bit lads'
-	elif choice == 'anime catgirl':
-		description = 'kyaa kawaii nyan'
+	descdict = {
+	'empty':' ',
+	'human':'A race that once thrived, now driven to the brink of slow destruction. Mostly content to be farmers and traders, although some rare enterprising souls take the sword and venture out. placeholder placeholder placeholder placeholder',
+	'warden' : 'generic warrior barbarian, at least until i think about the lore a wee bit lads',
+	'anime catgirl': 'kyaa kawaii nyan'
+	}
+
+	description = descdict.get(choice,'default text')
 	return description
 
 def ccreation_stats(choice):
-	if choice == 'empty':
-		stats = [' ']
-	elif choice == 'human':
-		stats = ['this is the human statblock', 'it comes as strings in a list']
-	elif choice == 'warden':
-		stats = ['more to combat','more to strength', 'more to constitution', 'decent starting weapons']
-	elif choice == 'anime catgirl':
-		stats = ['we','are', 'here', 'for', 'test', 'purposes']
+	statdict = {
+	'empty':[' '],
+	'human': ['this is the human statblock', 'it comes as strings in a list'],
+	'warden' : ['more to combat','more to strength', 'more to constitution', 'decent starting weapons'],
+	'anime catgirl': ['we','are', 'here', 'for', 'test', 'purposes']
+	}
 
+	stats = statdict.get(choice, ['default text'])
 	return stats
 
 def random_salve_name(salve):

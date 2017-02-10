@@ -62,8 +62,22 @@ class GlobalDir(object):# globals not in here: camera, con, panel, director
 		self.namekeeper = {}
 		self.dungeon_level = 1
 		self.drawdir = DrawingDir()
+
+		self.noisemap = libtcod.heightmap_new(MAP_WIDTH,MAP_HEIGHT)
+		
+		self.processnoise = False
+
 		self.game_msgs = []
 		self.game_state = 'playing'
+
+	def create_noise(self, origin, noisevalue):#self, gldir) 
+#this shouldnt be here but it's a clean way to do it and i don't care
+		x = origin.x
+		y = origin.y
+		currentnoise = libtcod.heightmap_get_value(self.noisemap, x, y)
+		radius = (currentnoise + noisevalue) * 4
+		libtcod.heightmap_add_hill(self.noisemap, x, y, radius, noisevalue)#noisemap clamped at 10, loudest possible
+		self.processnoise = True
 		
 class PlayerActionReport(object): 
 	def __init__(self, action = None, x1 = None, y1 = None, x2 = None, y2 = None, objects = None, action_extra = None, takes_turn = True):
@@ -76,7 +90,7 @@ class PlayerActionReport(object):
 		self.x2 = x2                       #
 		self.y2 = y2                       #
 		self.objects = objects             # objects involved in the last action, not the global
-		self.recorder = deque([], 20)                 #
+		self.recorder = deque([], 20)                 # double ended queue from collections, makes deleting old actions automatic
 
 
 	def __dir__(self):
@@ -179,6 +193,7 @@ class SkillTree:#DO NOT NEED TO BE GLOBAL. I can have them easily belong to the 
 
 		skillcon = libtcod.console_new(width, height)
 		libtcod.console_print_frame(skillcon,0, 0, width, height, clear=False, flag=libtcod.BKGND_DEFAULT)
+		print node.name
 		description = catalog.get_node_description(node.name) ## 
 		for line in description:
 			libtcod.console_print_ex(skillcon, 1, description.index(line)+1,libtcod.BKGND_NONE, libtcod.LEFT, line)
@@ -211,9 +226,7 @@ class PerkTree(SkillTree):
 
 
 
-class Ccreation: #singleton, ccreation -- DOES NOT NEED TO BE A SINGLETON - its only run once at new_game, so it can just be discarded once its values get passed to player obj
-#ill change this later
-#character creation code is a bit of a mess here, but it should be understandable if you go through it line by line
+class Ccreation: 
 	def __init__(self, stage = 'race select', chosenrace = 'empty', chosengclass = 'empty', chosenperk = 'empty'):
 		self.stage = stage
 		self.chosenrace = chosenrace
@@ -243,6 +256,9 @@ class Ccreation: #singleton, ccreation -- DOES NOT NEED TO BE A SINGLETON - its 
 				tree_lvlup()
 				self.stage = 'complete'
 				clear_screen()
+			elif self.stage == 'quit out':
+				main_menu()
+
 			# elif self.stage == 'perk select':
 			#initalize player later here
 			
@@ -268,8 +284,7 @@ class Ccreation: #singleton, ccreation -- DOES NOT NEED TO BE A SINGLETON - its 
 
 		description_box = libtcod.console_new(width, height)
 		libtcod.console_set_alignment(description_box, libtcod.CENTER)
-		try: text = catalog.ccreation_description(choice)  # remove this try clause when i no longer have placeholder classes/racest/etc
-		except: text = "this description hasn't been written yet!"
+		text = catalog.ccreation_description(choice) 
 		libtcod.console_print_rect(description_box, width/2+2, height*2/3, width-5, height, text)
 		libtcod.console_print_frame(description_box,0, 0, width, height, clear=False, flag=libtcod.BKGND_DEFAULT)
 
@@ -319,6 +334,14 @@ class Ccreation: #singleton, ccreation -- DOES NOT NEED TO BE A SINGLETON - its 
 					return 'empty'	
 				self.stage = 'skill select'
 				return self.chosengclass
+
+		if key.vk == libtcod.KEY_ESCAPE:
+			if self.stage == 'class select':
+				self.stage = 'race select'
+				return 'empty'
+			elif self.stage == 'race select':
+				self.stage = 'quit out'
+
 		
 
 		index = key.c - ord('a')
@@ -833,7 +856,7 @@ class GameObj(object):
  
 		#Allocate a A* path
 		#The 1.41 is the normal diagonal cost of moving, it can be set as 0.0 if diagonal moves are prohibited
-		my_path = libtcod.path_new_using_map(fov, 1.41)
+		my_path = libtcod.path_new_using_map(fov, 1)
  
 		#Compute the path between self's coordinates and the target's coordinates
 		libtcod.path_compute(my_path, self.x, self.y, target.x, target.y)
@@ -930,7 +953,7 @@ class GameObj(object):
 
 	def get_ai_component(self):
 		if self.name in catalog.FULL_MONSTERLIST:
-			self.ai = AI.DumbMonster(self, gldir)
+			self.ai = AI.DumbAI(self, gldir)
 
 	def get_item_components(self):
 		if self.name == 'healing salve':  #only basic stats go here, for special functions and descriptions go to catalog
@@ -955,7 +978,7 @@ class GameObj(object):
 
 		elif self.name == 'sharpened stick':
 			self.item = Item(self, weight = 6, depth_level = 2,itemtype = 'equipment')
-			self.equipment = Equipment(self, slot = 'main hand', base_dmg = [9,11], equiptype = 'polearm')
+			self.equipment = Equipment(self, slot = 'main hand', base_dmg = [8,11], equiptype = 'polearm')
 
 		elif self.name == 'heavy broomstick':
 			self.item = Item(self, weight = 10, depth_level = 2,itemtype = 'equipment')
@@ -1044,6 +1067,7 @@ class Player(GameObj):#player is inherited because it's easier since it has one 
 			self.fighter.receive_status('sprint', 15)
 		elif statuslist[0] == 'sprint': message("You're already sprinting.", libtcod.white, gldir.game_msgs) 
 		elif statuslist[0] == 'sprint exhaustion': message("You're exhausted.", libtcod.red, gldir.game_msgs) 
+		
 	def abl_fling_trinket(self, chosen_trinket = None):
 		if not chosen_trinket: chosen_trinket = inventory_menu('Choose a trinket to throw:', itemtype = 'trinket') #so you can arrive here through 't' throw or 'a' ability > fling trinket..... remember inventory_menu returns None if it's cancelled
 		if not chosen_trinket: return
@@ -1247,6 +1271,15 @@ def main_menu():
 		elif choice == 2:  #quit
 			break
 
+def process_noise():
+	libtcod.heightmap_clamp(gldir.noisemap, 0, 10)
+	minn, maxn = libtcod.heightmap_get_minmax(gldir.noisemap)
+
+	if maxn != 0:
+		libtcod.heightmap_add(gldir.noisemap, -2)
+		
+	else:
+		gldir.processnoise = False
 
 def play_game():
 	global key, mouse
@@ -1282,11 +1315,18 @@ def play_game():
 
 		if gldir.game_state == 'playing' and player_action != 'didnt-take-turn':  # remember to have checks for timed buffs and things like that here, otherwise things will become shitty
 			gldir.player.speed_process()
+
+			if gldir.processnoise:
+				process_noise()
+
+
 			for object in gldir.game_objs:
 				if object.fighter and len(object.fighter.status) > 0:
 					for stati in object.fighter.status: stati.activate()
 				if object.ai:
 					object.ai.take_turn()	
+				
+
 
 		if player_action == 'exit':
 			clear_game()
@@ -1583,7 +1623,7 @@ def draw_glyph(glyphname):
 
 
 def make_map():
-	global gamemap, director, stairs
+	global gamemap, director, stairs, gldir
 
 	gamemap = [[Tile(True, x=x, y=y)
 		for y in range(MAP_HEIGHT)]
@@ -1632,6 +1672,7 @@ def make_map():
 	stairs.send_to_back()
 
 	place_items_in_level()
+	gldir.gamemap = gamemap
 
 def create_item_rngtable(depth_level = 1): # this gonna get modified to shit before this is over
 	output_items = []					# returns list of (OBJECT)items to spawn by calling get_random_item on a normal distribution of depthlevels
@@ -2107,7 +2148,7 @@ def new_game():
 	initialize_fov()
 	camera = Camera(player = gldir.player, fov_map = gldir.fov_map, gamemap = gamemap, con = con)
 
-	item = generate_item('sharpened stick', 0, 0)
+	item = generate_item('pipe gun', 0, 0)
 	gldir.player.inventory.append(item)
 
 
@@ -2132,20 +2173,8 @@ def pot_heal():
 	message('Your wounds start to feel better.', libtcod.white, gldir.game_msgs)
 	gldir.player.fighter.heal(POTHEAL_AMOUNT)
 
-# def draw_laser(origin, end, char, color): #origin and end must be GameObj(or otherwise also have camx, camy attributes)
-# 	line = graphical.createline(origin, end)
 
-# 	linecon = graphical.console_from_twopts(origin, end)
-# 	libtcod.console_set_default_foreground(linecon, color)
-# 	for point in line:
-# 		libtcod.console_put_char(linecon,int(point.x), int(point.y), char, libtcod.BKGND_NONE)
 
-# 	libtcod.console_blit(linecon, 0, 0, 0, 0, 0, min(origin.camx, end.camx), min(origin.camy, end.camy), 1, 0)
-# 	libtcod.console_flush()
-
-# 	libtcod.sys_sleep_milli(50)
-
-#OLD CODE: This functionality has been transferred to the graphical module
 
 
 def consumable_pipegun():
@@ -2154,12 +2183,13 @@ def consumable_pipegun():
 		return 'cancelled'
 	else:
 		message('The slug explodes out of the flimsy gun with a loud thunder and strikes the ' + monster.name + '! The damage is '+ str(LIGHTNING_DAMAGE) + ' hit points.', libtcod.light_blue, gldir.game_msgs)
-		line = graphical.LineHandler(player, monster, libtcod.light_blue)
+		line = graphical.LineHandler(gldir.player, monster, libtcod.light_blue)
+		gldir.create_noise(gldir.player, 8)
 		# lineffect.draw(libtcod.light_blue) #it's in the init method now, not sure if i should keep it there
 
-
-		monster.fighter.take_damage(15)
 		monster.fighter.receive_status('maim', 30)
+		monster.fighter.take_damage(15)
+		
 		
 def get_status_from_name(subject, statusname):
 	status = filter(lambda x: x.name == statusname, [stati for stati in subject.fighter.status])

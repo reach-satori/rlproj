@@ -3,7 +3,7 @@ from utility import *
 #AI is a simple FSM so far
 #transition is pass_into, check for transition is check_for_stateswap, an 'active' state gets executed in the take_turn method every turn
 
-class DumbMonster(object): #ai module belonging to GameObj, state switches around but always gets executed in take_turn method
+class DumbAI(object): #ai module belonging to GameObj, state switches around but always gets executed in take_turn method
 	def __init__(self, owner, gldir):
 		self.gldir = gldir
 		self.owner = owner
@@ -46,7 +46,9 @@ class AIState(object):# Base Class
 		self.ai.state = newstate(self.ai, self.gldir)
 		self.ai.state.execute()
 
-class SimpleIdle(AIState):
+
+
+class SimpleIdle(AIState): #stands there
 	def execute(self):
 		while True:
 			monster = self.owner
@@ -57,15 +59,19 @@ class SimpleIdle(AIState):
 
 	def check_for_stateswap(self):
 		monster = self.owner
-		if libtcod.map_is_in_fov(self.gldir.fov_map, monster.x, monster.y): self.pass_into(SimpleAttack)
+		if libtcod.map_is_in_fov(self.gldir.fov_map, monster.x, monster.y): 
+			self.pass_into(SimpleAttack)
 
-class SimpleAttack(AIState):
+class SimpleAttack(AIState): #walks up and hits
 	def execute(self):
 		while True:
+
 			self.formulate_turn()
 			monster = self.owner
 
+
 			if self.cost > monster.fighter.energy: return
+
 
 			monster.fighter.energy -= self.cost
 			if self.action == 'move':
@@ -75,7 +81,7 @@ class SimpleAttack(AIState):
 
 	def formulate_turn(self):
 		monster = self.owner
-			
+
 		if monster.distance_to(self.gldir.player) >= 2:
 			self.action = 'move'
 			self.target = obj_to_point(self.gldir.player)
@@ -88,9 +94,10 @@ class SimpleAttack(AIState):
 
 	def check_for_stateswap(self):
 		monster = self.owner
-		if not libtcod.map_is_in_fov(self.gldir.fov_map, monster.x, monster.y):	self.pass_into(SimpleSearch)
+		if not libtcod.map_is_in_fov(self.gldir.fov_map, monster.x, monster.y):	
+			self.pass_into(SimpleSearch)
 
-class SimpleSearch(AIState): #transition state
+class SimpleSearch(AIState): #walks up to where player was last seen
 	def execute(self):
 		while True:
 			monster = self.owner
@@ -106,6 +113,11 @@ class SimpleSearch(AIState): #transition state
 
 	def check_for_stateswap(self):
 		monster = self.owner
-		if libtcod.map_is_in_fov(self.gldir.fov_map, monster.x, monster.y): self.pass_into(SimpleAttack)
-		if self.ai.timer_since_swap > 7 or obj_to_point(self.owner) == self.target: self.pass_into(SimpleIdle)
+		if libtcod.map_is_in_fov(self.gldir.fov_map, monster.x, monster.y): 
+			self.pass_into(SimpleAttack)
+		if self.ai.timer_since_swap > 7 or (self.owner.x, self.owner.y) == (self.target.x, self.target.y): 
+			self.pass_into(SimpleIdle)
+
+
+
 
