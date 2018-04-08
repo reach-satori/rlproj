@@ -1,0 +1,9 @@
+__pycache__
+libtcodpy/*
+*.pyc
+*.orig
+*.png
+*.jpg
+*.so.*
+*.so
+tags
